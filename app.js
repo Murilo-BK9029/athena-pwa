@@ -33,10 +33,55 @@ function formatBRL(value) {
 }
 
 function formatMonthLabel(ym) {
-  const parts = String(ym || '').split('-');
-  if (parts.length !== 2) return ym || 'Mês';
+  const cleanYm = String(ym || '').slice(0, 7);
+  const parts = cleanYm.split('-');
+  if (parts.length !== 2) return cleanYm || 'SEM MÊS';
   const nome = MONTH_NAMES[parts[1]] || parts[1];
   return `${nome} / ${parts[0]}`;
+}
+
+function groupItemsByMonth(items, getMonthKeyFn, getAmountFn) {
+  const map = new Map();
+
+  items.forEach((item) => {
+    const rawKey = String(getMonthKeyFn(item) || '').slice(0, 7);
+    const key = /^\d{4}-\d{2}$/.test(rawKey) ? rawKey : '0000-00';
+    if (!map.has(key)) {
+      map.set(key, { key, total: 0, items: [] });
+    }
+    const bucket = map.get(key);
+    bucket.total += Number(getAmountFn(item) || 0);
+    bucket.items.push(item);
+  });
+
+  // Ordena do mês mais recente/futuro para o mais antigo (ou cronológico se preferir)
+  return Array.from(map.values()).sort((a, b) => b.key.localeCompare(a.key));
+}
+
+function renderGroupedMonthList(container, groups, renderItemFn, emptyMessage) {
+  if (!container) return;
+  if (!Array.isArray(groups) || !groups.length) {
+    container.innerHTML = `<p class="muted">${emptyMessage}</p>`;
+    return;
+  }
+
+  container.innerHTML = groups.map((g) => {
+    const title = g.key === '0000-00' ? 'SEM COMPETÊNCIA' : formatMonthLabel(g.key);
+    const totalClass = g.total < 0 ? 'month-balance-neg' : 'month-balance-ok';
+    const rowsHtml = g.items.map(renderItemFn).join('');
+
+    return `
+      <div class="month-block">
+        <div class="month-header">
+          <span class="month-title">${title}</span>
+          <span class="${totalClass}">Total: ${formatBRL(g.total)}</span>
+        </div>
+        <div class="month-details" style="border-top: none; padding-top: 10px;">
+          ${rowsHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function normalizePersonName(name) {
@@ -600,40 +645,67 @@ function renderAll() {
   document.getElementById('kpiAReceber').textContent = formatBRL(aReceber);
   document.getElementById('kpiPatrimonio').textContent = formatBRL(caixaHoje + invTotal);
 
+  // 1. Movimentações agrupadas por mês
   const movListEl = document.getElementById('movimentacoesList');
-  movListEl.innerHTML = movs.length
-    ? movs.slice(-25).reverse().map((m) => {
-        const dt = String(m.data_caixa || '').slice(0, 10);
-        return `<div class="list-item"><span><strong>${m.descricao || 'Sem descrição'}</strong><br><small class="muted">${dt} • ${m.tipo_mov || ''} • ${m.account_id || ''}</small></span><strong>${formatBRL(m.valor)}</strong></div>`;
-      }).join('')
-    : '<p class="muted">Nenhuma movimentação encontrada na base.</p>';
+  const movGroups = groupItemsByMonth(
+    [...movs].reverse(),
+    (m) => String(m.data_caixa || m.data_competencia || '').slice(0, 7),
+    (m) => {
+      const v = Number(m.valor || 0);
+      const t = String(m.tipo_mov || '').toUpperCase();
+      if (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE') return v;
+      if (t === 'DESPESA' || t === 'PAGTO_FATURA' || t === 'APORTE') return -v;
+      return v;
+    }
+  );
+  renderGroupedMonthList(
+    movListEl,
+    movGroups,
+    (m) => {
+      const dt = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
+      return `<div class="month-detail-row"><span><strong>${m.descricao || 'Sem descrição'}</strong> • ${dt} • ${m.tipo_mov || ''} • ${m.account_id || ''}</span><strong>${formatBRL(m.valor)}</strong></div>`;
+    },
+    'Nenhuma movimentação encontrada na base.'
+  );
 
+  // 2. Cartões agrupados por mês da fatura
   const cartoesEl = document.getElementById('cartoesList');
-  if (cartoesEl) {
-    cartoesEl.innerHTML = parcelas.length
-      ? parcelas.slice(-30).reverse().map((p) => {
-          const minha = Number(p.minha_parte_liquida || 0);
-          const terc = Number(p.terceiro_liquido_a_receber || 0);
-          const desc = Number(p.desconto_rateado || 0);
-          const comp = String(p.competencia_fatura || '').slice(0, 7);
-          const extra = terc > 0
-            ? ` • ${p.pessoa_id || 'Terceiro'}: ${formatBRL(terc)}${desc > 0 ? ` (desc. ${formatBRL(desc)})` : ''}`
-            : '';
-          return `<div class="list-item"><span><strong>${p.descricao_parcela || 'Compra'}</strong><br><small class="muted">${p.cartao_id || ''} • Fatura ${comp} • Minha parte: ${formatBRL(minha)}${extra}</small></span><strong>${formatBRL(p.valor_fatura_banco)}</strong></div>`;
-        }).join('')
-      : '<p class="muted">Nenhuma parcela ou compra no cartão registrada ainda. Use "+ Lançar" e escolha "Compra no Cartão".</p>';
-  }
+  const cardGroups = groupItemsByMonth(
+    [...parcelas].reverse(),
+    (p) => String(p.competencia_fatura || '').slice(0, 7),
+    (p) => Number(p.valor_fatura_banco || 0)
+  );
+  renderGroupedMonthList(
+    cartoesEl,
+    cardGroups,
+    (p) => {
+      const minha = Number(p.minha_parte_liquida || 0);
+      const terc = Number(p.terceiro_liquido_a_receber || 0);
+      const desc = Number(p.desconto_rateado || 0);
+      const extra = terc > 0
+        ? ` • ${p.pessoa_id || 'Terceiro'}: ${formatBRL(terc)}${desc > 0 ? ` (desc. ${formatBRL(desc)})` : ''}`
+        : '';
+      return `<div class="month-detail-row"><span><strong>${p.descricao_parcela || 'Compra'}</strong> • ${p.cartao_id || ''} • Minha parte: ${formatBRL(minha)}${extra}</span><strong>${formatBRL(p.valor_fatura_banco)}</strong></div>`;
+    },
+    'Nenhuma parcela ou compra no cartão registrada ainda. Use "+ Lançar" e escolha "Compra no Cartão".'
+  );
 
+  // 3. Terceiros agrupados por mês de competência
   const terceirosEl = document.getElementById('terceirosList');
-  if (terceirosEl) {
-    terceirosEl.innerHTML = terceiros.length
-      ? terceiros.slice(-30).reverse().map((t) => {
-          const comp = String(t.competencia || '').slice(0, 7);
-          return `<div class="list-item"><span><strong>${t.descricao || t.tipo_evento}</strong><br><small class="muted">${t.pessoa_id || ''} • Comp. ${comp} • ${t.status || ''}</small></span><strong>${formatBRL(t.valor_ajustado_cobrado)}</strong></div>`;
-        }).join('')
-      : '<p class="muted">Nenhum lançamento de reembolso ou terceiro registrado ainda.</p>';
-  }
+  const thirdGroups = groupItemsByMonth(
+    [...terceiros].reverse(),
+    (t) => String(t.competencia || '').slice(0, 7),
+    (t) => Number(t.valor_ajustado_cobrado || 0)
+  );
+  renderGroupedMonthList(
+    terceirosEl,
+    thirdGroups,
+    (t) =>
+      `<div class="month-detail-row"><span><strong>${t.descricao || t.tipo_evento}</strong> • ${t.pessoa_id || ''} • ${t.status || ''}</span><strong>${formatBRL(t.valor_ajustado_cobrado)}</strong></div>`,
+    'Nenhum lançamento de reembolso ou terceiro registrado ainda.'
+  );
 
+  // 4. Investimentos
   const invEl = document.getElementById('investimentosList');
   if (invEl) {
     invEl.innerHTML = investimentos.length
@@ -643,6 +715,7 @@ function renderAll() {
       : '<p class="muted">Nenhuma operação de investimento registrada na base ainda.</p>';
   }
 
+  // 5. Cronograma mensal até 12/2027
   let saldoAcumulado = caixaHoje;
   const scheduleRows = proj.map((p) => {
     const mes = String(p.competencia || '').slice(0, 7);
