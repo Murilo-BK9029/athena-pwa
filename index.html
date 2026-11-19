@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Athena - Sistema Financeiro Integrado</title>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Athena Finanças</h1>
+        <span id="syncStatus" class="sync-badge">Aguardando configuração</span>
+      </div>
+      <div class="topbar-actions">
+        <button id="btnSync" class="btn btn-ghost" type="button">Sincronizar</button>
+        <button id="btnOpenQuickAdd" class="btn btn-primary" type="button">+ Lançar</button>
+      </div>
+    </header>
+
+    <nav class="nav-tabs" aria-label="Seções do sistema">
+      <button class="nav-tab active" data-tab="inicio" type="button">Início</button>
+      <button class="nav-tab" data-tab="movimentacoes" type="button">Movimentações</button>
+      <button class="nav-tab" data-tab="cartoes" type="button">Cartões</button>
+      <button class="nav-tab" data-tab="terceiros" type="button">Terceiros</button>
+      <button class="nav-tab" data-tab="investimentos" type="button">Investimentos</button>
+      <button class="nav-tab" data-tab="projecao" type="button">Fluxo 2027</button>
+      <button class="nav-tab" data-tab="config" type="button">Configurações</button>
+    </nav>
+
+    <main id="viewContainer" class="view-container">
+      <!-- Seção Início / Dashboard -->
+      <section id="tab-inicio" class="tab-panel active">
+        <div class="kpi-grid">
+          <article class="kpi-card">
+            <span class="kpi-label">Patrimônio Total</span>
+            <strong id="kpiPatrimonio" class="kpi-value">R$ 0,00</strong>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">Caixa Disponível</span>
+            <strong id="kpiCaixa" class="kpi-value">R$ 0,00</strong>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">Faturas em Aberto</span>
+            <strong id="kpiFaturas" class="kpi-value">R$ 0,00</strong>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">A Receber (Mãe / Terceiros)</span>
+            <strong id="kpiAReceber" class="kpi-value">R$ 0,00</strong>
+          </article>
+        </div>
+
+        <div class="card">
+          <h2>Resumo da Projeção (até 12/2027)</h2>
+          <div id="homeProjectionPreview" class="list-stack">
+            <p class="muted">Sincronize com o backend para carregar os dados consolidados.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Seção Movimentações -->
+      <section id="tab-movimentacoes" class="tab-panel">
+        <div class="card">
+          <h2>Movimentações Recentes</h2>
+          <div id="movimentacoesList" class="list-stack">
+            <p class="muted">Nenhuma movimentação carregada ainda.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Seção Cartões Compartilhados -->
+      <section id="tab-cartoes" class="tab-panel">
+        <div class="card">
+          <h2>Cartões Compartilhados (NB • C6 • MP)</h2>
+          <p class="muted">Diferencia sua parte, parte da sua mãe, descontos estimados e faturas sem duplicidade.</p>
+          <div id="cartoesList" class="list-stack"></div>
+        </div>
+      </section>
+
+      <!-- Seção Terceiros -->
+      <section id="tab-terceiros" class="tab-panel">
+        <div class="card">
+          <h2>Reembolsos e Razão de Terceiros</h2>
+          <div id="terceirosList" class="list-stack"></div>
+        </div>
+      </section>
+
+      <!-- Seção Investimentos -->
+      <section id="tab-investimentos" class="tab-panel">
+        <div class="card">
+          <h2>Carteira e Cotações</h2>
+          <div id="investimentosList" class="list-stack"></div>
+        </div>
+      </section>
+
+      <!-- Seção Projeção até 12/2027 -->
+      <section id="tab-projecao" class="tab-panel">
+        <div class="card">
+          <h2>Fluxo de Caixa Mensal (até 12/2027)</h2>
+          <div id="projecaoFullList" class="list-stack"></div>
+        </div>
+      </section>
+
+      <!-- Seção Configurações -->
+      <section id="tab-config" class="tab-panel">
+        <div class="card">
+          <h2>Conexão com Google Apps Script</h2>
+          <form id="configForm" class="form-stack">
+            <label>
+              URL do Web App (/exec)
+              <input type="url" id="cfgApiUrl" placeholder="https://script.google.com/macros/s/.../exec" required />
+            </label>
+            <label>
+              Chave de Acesso (API_ACCESS_KEY)
+              <input type="password" id="cfgApiKey" placeholder="Mesma chave salva em ScriptProperties" required />
+            </label>
+            <button type="submit" class="btn btn-primary">Salvar Conexão</button>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal de Cadastro Rápido -->
+  <div id="quickAddModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modalTitle">Novo Lançamento Rápido</h2>
+        <button id="btnCloseModal" class="btn-icon" type="button" aria-label="Fechar">✕</button>
+      </div>
+      <form id="quickAddForm" class="form-stack">
+        <label>
+          Tipo
+          <select id="txTipo" required>
+            <option value="DESPESA">Despesa (Conta/Dinheiro)</option>
+            <option value="RECEITA">Receita</option>
+            <option value="COMPRA_CARTAO">Compra no Cartão</option>
+            <option value="REEMBOLSO">Reembolso Recebido (Terceiros)</option>
+          </select>
+        </label>
+
+        <label>
+          Descrição
+          <input type="text" id="txDescricao" placeholder="Ex.: Supermercado" required />
+        </label>
+
+        <div class="form-row">
+          <label>
+            Valor (R$)
+            <input type="number" id="txValor" step="0.01" min="0.01" placeholder="250.00" required />
+          </label>
+          <label>
+            Data
+            <input type="date" id="txData" required />
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label>
+            Categoria
+            <input type="text" id="txCategoria" placeholder="Ex.: Alimentação" />
+          </label>
+          <label id="accountFieldWrap">
+            Conta / Pagamento
+            <select id="txConta">
+              <option value="Nubank">Nubank</option>
+              <option value="C6 Bank">C6 Bank</option>
+              <option value="Mercado Pago">Mercado Pago</option>
+              <option value="BTG">BTG</option>
+              <option value="Caixa">Caixa</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Campos extras exibidos apenas quando Compra no Cartão ou Reembolso -->
+        <div id="cardExtraFields" class="extra-box hidden">
+          <div class="form-row">
+            <label>
+              Parcelas
+              <input type="number" id="txParcelas" min="1" max="72" value="1" />
+            </label>
+            <label>
+              Responsável / Divisão
+              <select id="txResponsavel">
+                <option value="EU">Apenas Eu</option>
+                <option value="MAE_COMPARTILHADO">Compartilhado com Mãe</option>
+                <option value="MAE_INTEGRAL">Integral da Mãe</option>
+                <option value="ERIC">Eric</option>
+                <option value="ANDERSON">Anderson</option>
+              </select>
+            </label>
+          </div>
+          <div id="splitFields" class="form-row hidden">
+            <label>
+              Minha Parte (R$)
+              <input type="number" id="txMinhaParte" step="0.01" min="0" placeholder="Opcional" />
+            </label>
+            <label>
+              Desconto Estimado (R$)
+              <input type="number" id="txDesconto" step="0.01" min="0" value="0" />
+            </label>
+          </div>
+          <div id="splitAlert" class="alert-warn hidden"></div>
+        </div>
+
+        <button type="submit" id="btnSubmitTx" class="btn btn-primary">Confirmar e Sincronizar</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
