@@ -431,7 +431,7 @@ async function handleInvestSubmit(event) {
 
 async function handleUpdateQuotes() {
   try {
-    await postToBackend('updateMarketQuotes', {});
+    await postToBackend('refreshQuotes', {});
     alert('Cotações atualizadas!');
     await syncFromBackend();
   } catch (err) {
@@ -439,50 +439,43 @@ async function handleUpdateQuotes() {
   }
 }
 
-function renderMonthlyChart(projRows, caixaAtual) {
+function renderMonthlyChart(scheduleRows) {
   const container = document.getElementById('monthlyChartContainer');
   if (!container) return;
 
-  if (!Array.isArray(projRows) || !projRows.length) {
+  if (!Array.isArray(scheduleRows) || !scheduleRows.length) {
     container.innerHTML = '<p class="muted">Sincronize para gerar o gráfico mês a mês.</p>';
     return;
   }
 
-  const series = projRows.map((p) => ({
-    mes: String(p.competencia || ''),
-    proj: Number(p.saldo_caixa_projetado || 0) + caixaAtual,
-    comReemb: Number(p.saldo_com_reembolsos_previstos || 0) + caixaAtual
-  }));
-
   const maxAbs = Math.max(
     1,
-    ...series.map((s) => Math.max(Math.abs(s.proj), Math.abs(s.comReemb)))
+    ...scheduleRows.map((s) => Math.max(Math.abs(s.aPagar), Math.abs(s.saldoFinal)))
   );
 
   const barWidth = 22;
   const gap = 24;
   const chartHeight = 170;
   const baseY = 125;
-  const width = Math.max(420, series.length * (barWidth * 2 + gap) + 40);
+  const width = Math.max(420, scheduleRows.length * (barWidth * 2 + gap) + 40);
 
-  const barsSvg = series.map((item, idx) => {
+  const barsSvg = scheduleRows.map((item, idx) => {
     const x0 = 20 + idx * (barWidth * 2 + gap);
-    const hProj = Math.max(3, Math.round((Math.abs(item.proj) / maxAbs) * 95));
-    const hReemb = Math.max(3, Math.round((Math.abs(item.comReemb) / maxAbs) * 95));
+    const hPagar = Math.max(3, Math.round((Math.abs(item.aPagar) / maxAbs) * 95));
+    const hSaldo = Math.max(3, Math.round((Math.abs(item.saldoFinal) / maxAbs) * 95));
 
-    const yProj = item.proj >= 0 ? baseY - hProj : baseY;
-    const yReemb = item.comReemb >= 0 ? baseY - hReemb : baseY;
-    const colorProj = item.proj >= 0 ? '#38bdf8' : '#ef4444';
-    const colorReemb = item.comReemb >= 0 ? '#22c55e' : '#f59e0b';
+    const yPagar = baseY - hPagar;
+    const ySaldo = item.saldoFinal >= 0 ? baseY - hSaldo : baseY;
+    const colorSaldo = item.saldoFinal >= 0 ? '#22c55e' : '#ef4444';
 
-    const labelShort = item.mes.slice(2);
+    const labelShort = String(item.mes || '').slice(2);
     return `
       <g>
-        <rect x="${x0}" y="${yProj}" width="${barWidth}" height="${hProj}" rx="4" fill="${colorProj}">
-          <title>${item.mes} • Caixa proj.: ${formatBRL(item.proj)}</title>
+        <rect x="${x0}" y="${yPagar}" width="${barWidth}" height="${hPagar}" rx="4" fill="#f59e0b">
+          <title>${item.mes} • A pagar / saídas: ${formatBRL(item.aPagar)}</title>
         </rect>
-        <rect x="${x0 + barWidth + 4}" y="${yReemb}" width="${barWidth}" height="${hReemb}" rx="4" fill="${colorReemb}">
-          <title>${item.mes} • Com reembolsos: ${formatBRL(item.comReemb)}</title>
+        <rect x="${x0 + barWidth + 4}" y="${ySaldo}" width="${barWidth}" height="${hSaldo}" rx="4" fill="${colorSaldo}">
+          <title>${item.mes} • Saldo final na conta: ${formatBRL(item.saldoFinal)}</title>
         </rect>
         <text x="${x0 + barWidth + 2}" y="${chartHeight - 10}" text-anchor="middle" fill="#94a3b8" font-size="11">${labelShort}</text>
       </g>
@@ -491,10 +484,10 @@ function renderMonthlyChart(projRows, caixaAtual) {
 
   container.innerHTML = `
     <div class="chart-legend">
-      <span><i class="dot-proj"></i> Caixa projetado</span>
-      <span><i class="dot-reemb"></i> Com reembolsos previstos</span>
+      <span><i class="dot-reemb" style="background:#f59e0b;"></i> A pagar / saídas no mês</span>
+      <span><i class="dot-proj" style="background:#22c55e;"></i> Saldo final na conta</span>
     </div>
-    <svg width="${width}" height="${chartHeight}" viewBox="0 0 ${width} ${chartHeight}" role="img" aria-label="Gráfico mensal de fluxo de caixa">
+    <svg width="${width}" height="${chartHeight}" viewBox="0 0 ${width} ${chartHeight}" role="img" aria-label="Cronograma mensal de pagamentos e saldo na conta">
       <line x1="12" y1="${baseY}" x2="${width - 12}" y2="${baseY}" stroke="#25324a" stroke-width="1.5" />
       ${barsSvg}
     </svg>
@@ -511,12 +504,40 @@ function renderAll() {
   const investimentos = (snap && Array.isArray(snap.investimentos)) ? snap.investimentos : [];
   const proj = (snap && Array.isArray(snap.projecao_2026_2027)) ? snap.projecao_2026_2027 : [];
 
-  let caixa = 0;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  let caixaHoje = 0;
+
+  const entradasPorMes = {};
+  const saidasMovPorMes = {};
+
   movs.forEach((m) => {
     const v = Number(m.valor || 0);
     const t = String(m.tipo_mov || '').toUpperCase();
-    if (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE') caixa += v;
-    if (t === 'DESPESA' || t === 'PAGTO_FATURA' || t === 'APORTE') caixa -= v;
+    const dtCaixa = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
+    const mesKey = dtCaixa.slice(0, 7);
+
+    let delta = 0;
+    if (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE') delta = v;
+    if (t === 'DESPESA' || t === 'PAGTO_FATURA' || t === 'APORTE') delta = -v;
+
+    if (!dtCaixa || dtCaixa <= todayIso) {
+      caixaHoje += delta;
+    }
+
+    if (mesKey) {
+      if (delta > 0) entradasPorMes[mesKey] = (entradasPorMes[mesKey] || 0) + delta;
+      if (delta < 0) saidasMovPorMes[mesKey] = (saidasMovPorMes[mesKey] || 0) + Math.abs(delta);
+    }
+  });
+
+  const faturasPorMes = {};
+  parcelas.forEach((p) => {
+    if (String(p.status_fatura || '').toUpperCase() === 'PAGA') return;
+    const comp = String(p.competencia_fatura || '').slice(0, 7);
+    const val = Number(p.valor_fatura_banco || 0);
+    if (comp) {
+      faturasPorMes[comp] = (faturasPorMes[comp] || 0) + val;
+    }
   });
 
   const faturasAbertas = parcelas
@@ -534,10 +555,10 @@ function renderAll() {
       : acc + v;
   }, 0);
 
-  document.getElementById('kpiCaixa').textContent = formatBRL(caixa);
+  document.getElementById('kpiCaixa').textContent = formatBRL(caixaHoje);
   document.getElementById('kpiFaturas').textContent = formatBRL(faturasAbertas);
   document.getElementById('kpiAReceber').textContent = formatBRL(aReceber);
-  document.getElementById('kpiPatrimonio').textContent = formatBRL(caixa + invTotal);
+  document.getElementById('kpiPatrimonio').textContent = formatBRL(caixaHoje + invTotal);
 
   const movListEl = document.getElementById('movimentacoesList');
   movListEl.innerHTML = movs.length
@@ -554,10 +575,11 @@ function renderAll() {
           const minha = Number(p.minha_parte_liquida || 0);
           const terc = Number(p.terceiro_liquido_a_receber || 0);
           const desc = Number(p.desconto_rateado || 0);
+          const comp = String(p.competencia_fatura || '').slice(0, 7);
           const extra = terc > 0
             ? ` • ${p.pessoa_id || 'Terceiro'}: ${formatBRL(terc)}${desc > 0 ? ` (desc. ${formatBRL(desc)})` : ''}`
             : '';
-          return `<div class="list-item"><span><strong>${p.descricao_parcela || 'Compra'}</strong><br><small class="muted">${p.cartao_id || ''} • Fatura ${p.competencia_fatura || ''} • Minha parte: ${formatBRL(minha)}${extra}</small></span><strong>${formatBRL(p.valor_fatura_banco)}</strong></div>`;
+          return `<div class="list-item"><span><strong>${p.descricao_parcela || 'Compra'}</strong><br><small class="muted">${p.cartao_id || ''} • Fatura ${comp} • Minha parte: ${formatBRL(minha)}${extra}</small></span><strong>${formatBRL(p.valor_fatura_banco)}</strong></div>`;
         }).join('')
       : '<p class="muted">Nenhuma parcela ou compra no cartão registrada ainda. Use "+ Lançar" e escolha "Compra no Cartão".</p>';
   }
@@ -565,9 +587,10 @@ function renderAll() {
   const terceirosEl = document.getElementById('terceirosList');
   if (terceirosEl) {
     terceirosEl.innerHTML = terceiros.length
-      ? terceiros.slice(-30).reverse().map((t) =>
-          `<div class="list-item"><span><strong>${t.descricao || t.tipo_evento}</strong><br><small class="muted">${t.pessoa_id || ''} • Comp. ${t.competencia || ''} • ${t.status || ''}</small></span><strong>${formatBRL(t.valor_ajustado_cobrado)}</strong></div>`
-        ).join('')
+      ? terceiros.slice(-30).reverse().map((t) => {
+          const comp = String(t.competencia || '').slice(0, 7);
+          return `<div class="list-item"><span><strong>${t.descricao || t.tipo_evento}</strong><br><small class="muted">${t.pessoa_id || ''} • Comp. ${comp} • ${t.status || ''}</small></span><strong>${formatBRL(t.valor_ajustado_cobrado)}</strong></div>`;
+        }).join('')
       : '<p class="muted">Nenhum lançamento de reembolso ou terceiro registrado ainda.</p>';
   }
 
@@ -580,19 +603,41 @@ function renderAll() {
       : '<p class="muted">Nenhuma operação de investimento registrada na base ainda.</p>';
   }
 
+  // Monta cronograma mês a mês: entradas, a pagar (despesas + faturas abertas) e saldo final na conta
+  let saldoAcumulado = caixaHoje;
+  const scheduleRows = proj.map((p) => {
+    const mes = String(p.competencia || '').slice(0, 7);
+    const entradas = Number(entradasPorMes[mes] || 0);
+    const saidasMov = Number(saidasMovPorMes[mes] || 0);
+    const faturasMes = Number(faturasPorMes[mes] || 0);
+    const aPagar = saidasMov + faturasMes;
+
+    // Evita dupla contagem se o mês já está refletido em caixaHoje (ex.: 2026-11)
+    if (mes !== todayIso.slice(0, 7)) {
+      saldoAcumulado += entradas - aPagar;
+    }
+
+    return {
+      mes,
+      entradas,
+      faturasMes,
+      aPagar,
+      reembolsosPrevistos: Number(p.reembolsos_a_receber || 0),
+      saldoFinal: saldoAcumulado
+    };
+  });
+
   const projPreviewEl = document.getElementById('homeProjectionPreview');
   const projFullEl = document.getElementById('projecaoFullList');
-  if (proj.length) {
-    const mapRow = (p) => {
-      const saldoAjustado = Number(p.saldo_caixa_projetado || 0) + caixa;
-      const saldoComReemb = Number(p.saldo_com_reembolsos_previstos || 0) + caixa;
-      return `<div class="list-item"><span><strong>${p.competencia}</strong><br><small class="muted">A receber: ${formatBRL(p.reembolsos_a_receber)} • Com reembolsos: ${formatBRL(saldoComReemb)}</small></span><strong>Caixa proj.: ${formatBRL(saldoAjustado)}</strong></div>`;
-    };
-    projPreviewEl.innerHTML = proj.slice(0, 4).map(mapRow).join('');
-    projFullEl.innerHTML = proj.map(mapRow).join('');
+  if (scheduleRows.length) {
+    const mapRow = (item) =>
+      `<div class="list-item"><span><strong>${item.mes}</strong><br><small class="muted">Entradas: ${formatBRL(item.entradas)} • A pagar (desp./faturas): ${formatBRL(item.aPagar)}</small></span><strong>Saldo na conta: ${formatBRL(item.saldoFinal)}</strong></div>`;
+
+    projPreviewEl.innerHTML = scheduleRows.slice(0, 4).map(mapRow).join('');
+    projFullEl.innerHTML = scheduleRows.map(mapRow).join('');
   }
 
-  renderMonthlyChart(proj, caixa);
+  renderMonthlyChart(scheduleRows);
 }
 
 function switchTab(tabName) {
