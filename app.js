@@ -293,6 +293,7 @@ function renderAll() {
     : [];
   const parcelas = (snap && Array.isArray(snap.parcelas_cartao)) ? snap.parcelas_cartao : [];
   const terceiros = (snap && Array.isArray(snap.terceiros_razao)) ? snap.terceiros_razao : [];
+  const investimentos = (snap && Array.isArray(snap.investimentos)) ? snap.investimentos : [];
   const proj = (snap && Array.isArray(snap.projecao_2026_2027)) ? snap.projecao_2026_2027 : [];
 
   let caixa = 0;
@@ -311,35 +312,72 @@ function renderAll() {
     .filter((t) => String(t.status || '').toUpperCase() !== 'QUITADO')
     .reduce((acc, t) => acc + Number(t.valor_ajustado_cobrado || 0), 0);
 
-  const invTotal = (snap && Array.isArray(snap.investimentos))
-    ? snap.investimentos.reduce((acc, op) => {
-        const v = Number(op.valor_total || 0);
-        return String(op.tipo_op).toUpperCase() === 'VENDA' ? acc - v : acc + v;
-      }, 0)
-    : 0;
+  const invTotal = investimentos.reduce((acc, op) => {
+    const v = Number(op.valor_total || 0);
+    return String(op.tipo_op).toUpperCase() === 'VENDA' ? acc - v : acc + v;
+  }, 0);
 
   document.getElementById('kpiCaixa').textContent = formatBRL(caixa);
   document.getElementById('kpiFaturas').textContent = formatBRL(faturasAbertas);
   document.getElementById('kpiAReceber').textContent = formatBRL(aReceber);
   document.getElementById('kpiPatrimonio').textContent = formatBRL(caixa + invTotal);
 
+  // 1. Movimentações
   const movListEl = document.getElementById('movimentacoesList');
   movListEl.innerHTML = movs.length
-    ? movs.slice(-20).reverse().map((m) =>
-        `<div class="list-item"><span><strong>${m.descricao || 'Sem descrição'}</strong><br><small class="muted">${m.data_caixa || ''} • ${m.tipo_mov || ''}</small></span><strong>${formatBRL(m.valor)}</strong></div>`
-      ).join('')
+    ? movs.slice(-25).reverse().map((m) => {
+        const dt = String(m.data_caixa || '').slice(0, 10);
+        return `<div class="list-item"><span><strong>${m.descricao || 'Sem descrição'}</strong><br><small class="muted">${dt} • ${m.tipo_mov || ''} • ${m.account_id || ''}</small></span><strong>${formatBRL(m.valor)}</strong></div>`;
+      }).join('')
     : '<p class="muted">Nenhuma movimentação encontrada na base.</p>';
 
+  // 2. Cartões Compartilhados
+  const cartoesEl = document.getElementById('cartoesList');
+  if (cartoesEl) {
+    cartoesEl.innerHTML = parcelas.length
+      ? parcelas.slice(-30).reverse().map((p) => {
+          const minha = Number(p.minha_parte_liquida || 0);
+          const terc = Number(p.terceiro_liquido_a_receber || 0);
+          const desc = Number(p.desconto_rateado || 0);
+          const extra = terc > 0
+            ? ` • ${p.pessoa_id || 'Terceiro'}: ${formatBRL(terc)}${desc > 0 ? ` (desc. ${formatBRL(desc)})` : ''}`
+            : '';
+          return `<div class="list-item"><span><strong>${p.descricao_parcela || 'Compra'}</strong><br><small class="muted">${p.cartao_id || ''} • Fatura ${p.competencia_fatura || ''} • Minha parte: ${formatBRL(minha)}${extra}</small></span><strong>${formatBRL(p.valor_fatura_banco)}</strong></div>`;
+        }).join('')
+      : '<p class="muted">Nenhuma parcela ou compra no cartão registrada ainda. Use "+ Lançar" e escolha "Compra no Cartão".</p>';
+  }
+
+  // 3. Terceiros / Reembolsos
+  const terceirosEl = document.getElementById('terceirosList');
+  if (terceirosEl) {
+    terceirosEl.innerHTML = terceiros.length
+      ? terceiros.slice(-30).reverse().map((t) =>
+          `<div class="list-item"><span><strong>${t.descricao || t.tipo_evento}</strong><br><small class="muted">${t.pessoa_id || ''} • Comp. ${t.competencia || ''} • ${t.status || ''}</small></span><strong>${formatBRL(t.valor_ajustado_cobrado)}</strong></div>`
+        ).join('')
+      : '<p class="muted">Nenhum lançamento de reembolso ou terceiro registrado ainda.</p>';
+  }
+
+  // 4. Investimentos
+  const invEl = document.getElementById('investimentosList');
+  if (invEl) {
+    invEl.innerHTML = investimentos.length
+      ? investimentos.slice(-30).reverse().map((op) =>
+          `<div class="list-item"><span><strong>${op.ticker || op.nome_ativo}</strong><br><small class="muted">${op.tipo_op || ''} • ${op.classe_ativo || ''} • Qtd: ${op.quantidade || 0}</small></span><strong>${formatBRL(op.valor_total)}</strong></div>`
+        ).join('')
+      : '<p class="muted">Nenhuma operação de investimento registrada na base ainda.</p>';
+  }
+
+  // 5. Projeção até 12/2027 (somando o caixa atual ao saldo projetado)
   const projPreviewEl = document.getElementById('homeProjectionPreview');
   const projFullEl = document.getElementById('projecaoFullList');
   if (proj.length) {
-    const htmlProj = proj.map((p) =>
-      `<div class="list-item"><span><strong>${p.competencia}</strong><br><small class="muted">A receber: ${formatBRL(p.reembolsos_a_receber)}</small></span><strong>Caixa proj.: ${formatBRL(p.saldo_caixa_projetado)}</strong></div>`
-    ).join('');
-    projPreviewEl.innerHTML = proj.slice(0, 4).map((p) =>
-      `<div class="list-item"><span><strong>${p.competencia}</strong></span><strong>${formatBRL(p.saldo_caixa_projetado)}</strong></div>`
-    ).join('');
-    projFullEl.innerHTML = htmlProj;
+    const mapRow = (p) => {
+      const saldoAjustado = Number(p.saldo_caixa_projetado || 0) + caixa;
+      const saldoComReemb = Number(p.saldo_com_reembolsos_previstos || 0) + caixa;
+      return `<div class="list-item"><span><strong>${p.competencia}</strong><br><small class="muted">A receber: ${formatBRL(p.reembolsos_a_receber)} • Com reembolsos: ${formatBRL(saldoComReemb)}</small></span><strong>Caixa proj.: ${formatBRL(saldoAjustado)}</strong></div>`;
+    };
+    projPreviewEl.innerHTML = proj.slice(0, 4).map(mapRow).join('');
+    projFullEl.innerHTML = proj.map(mapRow).join('');
   }
 }
 
