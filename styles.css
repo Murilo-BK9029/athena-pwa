@@ -139,6 +139,15 @@ body {
   margin-bottom: 10px;
 }
 
+.card-header-inline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
 .muted {
   color: var(--text-muted);
   font-size: 0.9rem;
@@ -249,7 +258,8 @@ body {
 }
 
 .form-stack input,
-.form-stack select {
+.form-stack select,
+.form-row input {
   width: 100%;
   background: var(--bg-surface-2);
   color: var(--text-main);
@@ -282,6 +292,58 @@ body {
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 0.82rem;
+}
+
+.chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.chart-wrap {
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot-proj {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+
+.dot-reemb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--success);
+  display: inline-block;
 }
 
 @media (max-width: 520px) {

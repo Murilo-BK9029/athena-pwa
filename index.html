@@ -83,6 +83,15 @@
       <!-- Seção Terceiros -->
       <section id="tab-terceiros" class="tab-panel">
         <div class="card">
+          <h2>Adicionar Pessoa / Responsável</h2>
+          <form id="addPersonForm" class="form-row">
+            <input type="text" id="newPersonName" placeholder="Ex.: JOAO ou TIO_PAULO" required />
+            <button type="submit" class="btn btn-primary">Adicionar Pessoa</button>
+          </form>
+          <div id="peopleChips" class="chips-row" style="margin-top: 10px;"></div>
+        </div>
+
+        <div class="card">
           <h2>Reembolsos e Razão de Terceiros</h2>
           <div id="terceirosList" class="list-stack"></div>
         </div>
@@ -91,13 +100,71 @@
       <!-- Seção Investimentos -->
       <section id="tab-investimentos" class="tab-panel">
         <div class="card">
-          <h2>Carteira e Cotações</h2>
+          <div class="card-header-inline">
+            <h2>Novo Lançamento de Investimento</h2>
+            <button id="btnUpdateQuotes" class="btn btn-ghost" type="button">Atualizar Cotações</button>
+          </div>
+          <form id="investForm" class="form-stack">
+            <div class="form-row">
+              <label>
+                Operação
+                <select id="invTipoOp">
+                  <option value="APORTE">Aporte (Compra)</option>
+                  <option value="RESGATE">Resgate (Venda)</option>
+                  <option value="DIVIDENDO">Dividendo / Provento</option>
+                </select>
+              </label>
+              <label>
+                Classe do Ativo
+                <select id="invClasse">
+                  <option value="ACAO">Ação</option>
+                  <option value="FII">FII</option>
+                  <option value="ETF">ETF</option>
+                  <option value="RENDA_FIXA">Renda Fixa / Tesouro</option>
+                  <option value="CRIPTO">Cripto</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="form-row">
+              <label>
+                Ticker / Ativo
+                <input type="text" id="invTicker" placeholder="Ex.: IVVB11, MXRF11, CDB_110" required />
+              </label>
+              <label>
+                Data
+                <input type="date" id="invData" required />
+              </label>
+            </div>
+
+            <div class="form-row">
+              <label>
+                Quantidade
+                <input type="number" id="invQtd" step="0.0001" min="0" placeholder="1" />
+              </label>
+              <label>
+                Valor Total (R$)
+                <input type="number" id="invValorTotal" step="0.01" min="0.01" placeholder="500.00" required />
+              </label>
+            </div>
+
+            <button type="submit" id="btnSubmitInv" class="btn btn-primary">Salvar Investimento</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Carteira e Operações</h2>
           <div id="investimentosList" class="list-stack"></div>
         </div>
       </section>
 
       <!-- Seção Projeção até 12/2027 -->
       <section id="tab-projecao" class="tab-panel">
+        <div class="card">
+          <h2>Gráfico Mensal (2026-11 a 2027-12)</h2>
+          <div id="monthlyChartContainer" class="chart-wrap"></div>
+        </div>
+
         <div class="card">
           <h2>Fluxo de Caixa Mensal (até 12/2027)</h2>
           <div id="projecaoFullList" class="list-stack"></div>
@@ -187,10 +254,12 @@
               <select id="txResponsavel">
                 <option value="EU">Apenas Eu</option>
                 <option value="MAE_COMPARTILHADO">Compartilhado com Mãe</option>
-                <option value="MAE_INTEGRAL">Integral da Mãe</option>
-                <option value="ERIC">Eric</option>
-                <option value="ANDERSON">Anderson</option>
+                <option value="MAE">Terceiro: MAE</option>
+                <option value="ERIC">Terceiro: ERIC</option>
+                <option value="ANDERSON">Terceiro: ANDERSON</option>
+                <option value="__NOVA_PESSOA__">+ Cadastrar nova pessoa...</option>
               </select>
+              <input type="text" id="txNovaPessoa" class="hidden" placeholder="Digite o nome (ex.: PEDRO)" />
             </label>
           </div>
           <div id="splitFields" class="form-row hidden">
