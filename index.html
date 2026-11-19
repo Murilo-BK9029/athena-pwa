@@ -48,9 +48,16 @@
             <strong id="kpiFaturas" class="kpi-value">R$ 0,00</strong>
           </article>
           <article class="kpi-card">
-            <span class="kpi-label">A Receber (Mãe / Terceiros)</span>
+            <span class="kpi-label">A Receber (Terceiros)</span>
             <strong id="kpiAReceber" class="kpi-value">R$ 0,00</strong>
           </article>
+        </div>
+
+        <div class="card">
+          <h2>Saldo Atual por Banco / Conta</h2>
+          <div id="bankBalancesGrid" class="bank-grid">
+            <p class="muted">Sincronize para calcular os saldos por banco.</p>
+          </div>
         </div>
 
         <div class="card">
@@ -64,7 +71,7 @@
       <!-- Seção Movimentações -->
       <section id="tab-movimentacoes" class="tab-panel">
         <div class="card">
-          <h2>Movimentações Recentes</h2>
+          <h2>Movimentações por Mês</h2>
           <div id="movimentacoesList" class="list-stack">
             <p class="muted">Nenhuma movimentação carregada ainda.</p>
           </div>
@@ -74,8 +81,8 @@
       <!-- Seção Cartões Compartilhados -->
       <section id="tab-cartoes" class="tab-panel">
         <div class="card">
-          <h2>Cartões Compartilhados (NB • C6 • MP)</h2>
-          <p class="muted">Diferencia sua parte, parte da sua mãe, descontos estimados e faturas sem duplicidade.</p>
+          <h2>Cartões por Mês da Fatura</h2>
+          <p class="muted">Diferencia sua parte, parte de terceiros, descontos estimados e faturas sem duplicidade.</p>
           <div id="cartoesList" class="list-stack"></div>
         </div>
       </section>
@@ -85,14 +92,14 @@
         <div class="card">
           <h2>Adicionar Pessoa / Responsável</h2>
           <form id="addPersonForm" class="form-row">
-            <input type="text" id="newPersonName" placeholder="Ex.: JOAO ou TIO_PAULO" required />
+            <input type="text" id="newPersonName" placeholder="Ex.: MAE, ERIC, ANDERSON ou JOAO" required />
             <button type="submit" class="btn btn-primary">Adicionar Pessoa</button>
           </form>
           <div id="peopleChips" class="chips-row" style="margin-top: 10px;"></div>
         </div>
 
         <div class="card">
-          <h2>Reembolsos e Razão de Terceiros</h2>
+          <h2>Reembolsos e Razão de Terceiros por Mês</h2>
           <div id="terceirosList" class="list-stack"></div>
         </div>
       </section>
@@ -129,7 +136,7 @@
             <div class="form-row">
               <label>
                 Ticker / Ativo
-                <input type="text" id="invTicker" placeholder="Ex.: IVVB11, MXRF11, CDB_110" required />
+                <input type="text" id="invTicker" placeholder="Ex.: BBAS3, IVVB11, MXRF11" required />
               </label>
               <label>
                 Data
@@ -174,7 +181,8 @@
       <!-- Seção Configurações -->
       <section id="tab-config" class="tab-panel">
         <div class="card">
-          <h2>Conexão com Google Apps Script</h2>
+          <h2>Conexão com Google Apps Script (Individual por Usuário)</h2>
+          <p class="muted" style="margin-bottom: 12px;">Cada pessoa conecta sua própria URL /exec e chave secreta. Os dados ficam 100% isolados na planilha de cada conta Google.</p>
           <form id="configForm" class="form-stack">
             <label>
               URL do Web App (/exec)
@@ -182,7 +190,7 @@
             </label>
             <label>
               Chave de Acesso (API_ACCESS_KEY)
-              <input type="password" id="cfgApiKey" placeholder="Mesma chave salva em ScriptProperties" required />
+              <input type="password" id="cfgApiKey" placeholder="Chave salva em ScriptProperties" required />
             </label>
             <button type="submit" class="btn btn-primary">Salvar Conexão</button>
           </form>
@@ -231,14 +239,26 @@
             <input type="text" id="txCategoria" placeholder="Ex.: Alimentação" />
           </label>
           <label id="accountFieldWrap">
-            Conta / Pagamento
+            Banco / Conta / Cartão
             <select id="txConta">
               <option value="Nubank">Nubank</option>
               <option value="C6 Bank">C6 Bank</option>
               <option value="Mercado Pago">Mercado Pago</option>
               <option value="BTG">BTG</option>
-              <option value="Caixa">Caixa</option>
+              <option value="Banco do Brasil">Banco do Brasil</option>
+              <option value="Caixa">Caixa Econômica</option>
+              <option value="Itaú">Itaú</option>
+              <option value="Bradesco">Bradesco</option>
+              <option value="Santander">Santander</option>
+              <option value="Inter">Inter</option>
+              <option value="Sicredi">Sicredi</option>
+              <option value="Banrisul">Banrisul</option>
+              <option value="PicPay">PicPay</option>
+              <option value="XP">XP</option>
+              <option value="Dinheiro">Dinheiro / Carteira</option>
+              <option value="__OUTRO_BANCO__">+ Outro banco / conta...</option>
             </select>
+            <input type="text" id="txOutroBanco" class="hidden" placeholder="Digite o nome do banco" />
           </label>
         </div>
 

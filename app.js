@@ -54,7 +54,6 @@ function groupItemsByMonth(items, getMonthKeyFn, getAmountFn) {
     bucket.items.push(item);
   });
 
-  // Ordena do mês mais recente/futuro para o mais antigo (ou cronológico se preferir)
   return Array.from(map.values()).sort((a, b) => b.key.localeCompare(a.key));
 }
 
@@ -308,9 +307,11 @@ function evaluateSplitWarning() {
 function updateQuickFormVisibility() {
   const tipo = document.getElementById('txTipo').value;
   const resp = document.getElementById('txResponsavel').value;
+  const contaVal = document.getElementById('txConta').value;
   const cardBox = document.getElementById('cardExtraFields');
   const splitBox = document.getElementById('splitFields');
   const novaPessoaInput = document.getElementById('txNovaPessoa');
+  const outroBancoInput = document.getElementById('txOutroBanco');
 
   if (tipo === 'COMPRA_CARTAO') {
     cardBox.classList.remove('hidden');
@@ -332,7 +333,24 @@ function updateQuickFormVisibility() {
     }
   }
 
+  if (outroBancoInput) {
+    if (contaVal === '__OUTRO_BANCO__') {
+      outroBancoInput.classList.remove('hidden');
+    } else {
+      outroBancoInput.classList.add('hidden');
+    }
+  }
+
   evaluateSplitWarning();
+}
+
+function resolveSelectedAccount() {
+  const contaVal = document.getElementById('txConta').value;
+  if (contaVal === '__OUTRO_BANCO__') {
+    const custom = document.getElementById('txOutroBanco').value.trim();
+    return custom || 'Outro Banco';
+  }
+  return contaVal;
 }
 
 function resolveSelectedPerson() {
@@ -361,7 +379,7 @@ async function handleQuickAddSubmit(event) {
     const valor = Number(document.getElementById('txValor').value);
     const data = document.getElementById('txData').value;
     const categoria = document.getElementById('txCategoria').value.trim() || 'Geral';
-    const conta = document.getElementById('txConta').value;
+    const conta = resolveSelectedAccount();
     const idemKey = `pwa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     if (tipo === 'COMPRA_CARTAO') {
@@ -574,6 +592,7 @@ function renderAll() {
   const todayIso = new Date().toISOString().slice(0, 10);
   let caixaHoje = 0;
 
+  const saldosPorBanco = {};
   const entradasPorMes = {};
   const saidasMovPorMes = {};
   const itensPorMes = {};
@@ -589,6 +608,7 @@ function renderAll() {
     const t = String(m.tipo_mov || '').toUpperCase();
     const dtCaixa = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
     const mesKey = dtCaixa.slice(0, 7);
+    const banco = String(m.account_id || 'Sem Conta').trim() || 'Sem Conta';
 
     let delta = 0;
     if (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE') delta = v;
@@ -596,6 +616,7 @@ function renderAll() {
 
     if (!dtCaixa || dtCaixa <= todayIso) {
       caixaHoje += delta;
+      saldosPorBanco[banco] = (saldosPorBanco[banco] || 0) + delta;
     }
 
     if (mesKey) {
@@ -609,6 +630,21 @@ function renderAll() {
       }
     }
   });
+
+  // Renderiza saldos atuais por banco
+  const bankGridEl = document.getElementById('bankBalancesGrid');
+  if (bankGridEl) {
+    const bancos = Object.entries(saldosPorBanco);
+    bankGridEl.innerHTML = bancos.length
+      ? bancos
+          .sort((a, b) => b[1] - a[1])
+          .map(([nomeBanco, saldo]) => {
+            const cls = saldo >= 0 ? 'pos' : 'neg';
+            return `<div class="bank-card"><span class="bank-name">${nomeBanco}</span><strong class="bank-balance ${cls}">${formatBRL(saldo)}</strong></div>`;
+          })
+          .join('')
+      : '<p class="muted">Nenhuma conta movimentada até a data de hoje.</p>';
+  }
 
   const faturasPorMes = {};
   parcelas.forEach((p) => {
@@ -814,7 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnQuotes = document.getElementById('btnUpdateQuotes');
   if (btnQuotes) btnQuotes.addEventListener('click', handleUpdateQuotes);
 
-  ['txTipo', 'txResponsavel', 'txValor', 'txMinhaParte', 'txDesconto'].forEach((id) => {
+  ['txTipo', 'txResponsavel', 'txConta', 'txValor', 'txMinhaParte', 'txDesconto'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener('input', updateQuickFormVisibility);

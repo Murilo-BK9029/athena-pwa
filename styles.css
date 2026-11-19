@@ -110,6 +110,41 @@ body {
   margin-bottom: 16px;
 }
 
+.bank-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.bank-card {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bank-name {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.bank-balance {
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+
+.bank-balance.pos {
+  color: var(--success);
+}
+
+.bank-balance.neg {
+  color: var(--danger);
+}
+
 .kpi-card,
 .card {
   background: var(--bg-surface);
@@ -346,11 +381,6 @@ body {
   display: inline-block;
 }
 
-@media (max-width: 520px) {
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-}
 .month-block {
   background: var(--bg-surface-2);
   border: 1px solid var(--border);
@@ -419,6 +449,7 @@ body {
 }
 
 @media (max-width: 520px) {
+  .form-row,
   .month-metrics {
     grid-template-columns: 1fr;
   }
