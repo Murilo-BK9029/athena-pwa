@@ -6,7 +6,7 @@ const STORAGE_KEYS = {
 
 const DEFAULT_PEOPLE = ['MAE', 'ERIC', 'ANDERSON'];
 
-const MONTH_NAMES = {
+const MONTH_NAMES_FULL = {
   '01': 'JANEIRO',
   '02': 'FEVEREIRO',
   '03': 'MARÇO',
@@ -21,66 +21,93 @@ const MONTH_NAMES = {
   '12': 'DEZEMBRO'
 };
 
+const MONTH_NAMES_SHORT = {
+  '01': 'Jan',
+  '02': 'Fev',
+  '03': 'Mar',
+  '04': 'Abr',
+  '05': 'Mai',
+  '06': 'Jun',
+  '07': 'Jul',
+  '08': 'Ago',
+  '09': 'Set',
+  '10': 'Out',
+  '11': 'Nov',
+  '12': 'Dez'
+};
+
+const TEXT_NORMALIZATION_MAP = {
+  salario: 'Salário',
+  'free lancer': 'Freelancer',
+  freelancer: 'Freelancer',
+  supermercado: 'Supermercado',
+  ifood: 'Ifood',
+  alimentacao: 'Alimentação',
+  reembolso: 'Reembolso',
+  placa_solar: 'Placa Solar',
+  'placa solar': 'Placa Solar',
+  moto: 'Moto',
+  seguros: 'Seguros'
+};
+
 const state = {
   config: { apiUrl: '', apiKey: '' },
   snapshot: null,
-  people: [...DEFAULT_PEOPLE]
+  people: [...DEFAULT_PEOPLE],
+  homeScheduleExpanded: false,
+  selectedPersonFilter: 'ALL',
+  movFilters: {
+    month: 'ALL',
+    type: 'ALL',
+    account: 'ALL',
+    search: ''
+  }
 };
+
+/* ==========================================================================
+   1. UTILITÁRIOS DE FORMATAÇÃO E NORMALIZAÇÃO
+   ========================================================================== */
 
 function formatBRL(value) {
   const num = Number(value || 0);
   return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function formatDateBR(isoOrDate) {
+  const raw = String(isoOrDate || '').trim();
+  if (!raw) return '--/--/----';
+  const ymd = raw.slice(0, 10);
+  const parts = ymd.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return ymd;
+}
+
 function formatMonthLabel(ym) {
   const cleanYm = String(ym || '').slice(0, 7);
   const parts = cleanYm.split('-');
   if (parts.length !== 2) return cleanYm || 'SEM MÊS';
-  const nome = MONTH_NAMES[parts[1]] || parts[1];
+  const nome = MONTH_NAMES_FULL[parts[1]] || parts[1];
   return `${nome} / ${parts[0]}`;
 }
 
-function groupItemsByMonth(items, getMonthKeyFn, getAmountFn) {
-  const map = new Map();
-
-  items.forEach((item) => {
-    const rawKey = String(getMonthKeyFn(item) || '').slice(0, 7);
-    const key = /^\d{4}-\d{2}$/.test(rawKey) ? rawKey : '0000-00';
-    if (!map.has(key)) {
-      map.set(key, { key, total: 0, items: [] });
-    }
-    const bucket = map.get(key);
-    bucket.total += Number(getAmountFn(item) || 0);
-    bucket.items.push(item);
-  });
-
-  return Array.from(map.values()).sort((a, b) => b.key.localeCompare(a.key));
+function formatMonthShort(ym) {
+  const cleanYm = String(ym || '').slice(0, 7);
+  const parts = cleanYm.split('-');
+  if (parts.length !== 2) return cleanYm;
+  const nome = MONTH_NAMES_SHORT[parts[1]] || parts[1];
+  return `${nome}/${parts[0].slice(2)}`;
 }
 
-function renderGroupedMonthList(container, groups, renderItemFn, emptyMessage) {
-  if (!container) return;
-  if (!Array.isArray(groups) || !groups.length) {
-    container.innerHTML = `<p class="muted">${emptyMessage}</p>`;
-    return;
+function normalizeTextDisplay(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (TEXT_NORMALIZATION_MAP[lower]) {
+    return TEXT_NORMALIZATION_MAP[lower];
   }
-
-  container.innerHTML = groups.map((g) => {
-    const title = g.key === '0000-00' ? 'SEM COMPETÊNCIA' : formatMonthLabel(g.key);
-    const totalClass = g.total < 0 ? 'month-balance-neg' : 'month-balance-ok';
-    const rowsHtml = g.items.map(renderItemFn).join('');
-
-    return `
-      <div class="month-block">
-        <div class="month-header">
-          <span class="month-title">${title}</span>
-          <span class="${totalClass}">Total: ${formatBRL(g.total)}</span>
-        </div>
-        <div class="month-details" style="border-top: none; padding-top: 10px;">
-          ${rowsHtml}
-        </div>
-      </div>
-    `;
-  }).join('');
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 function normalizePersonName(name) {
@@ -89,6 +116,171 @@ function normalizePersonName(name) {
     .toUpperCase()
     .replace(/\s+/g, '_');
 }
+
+function getMovementBadge(tipoMov) {
+  const t = String(tipoMov || '').toUpperCase();
+  if (t === 'RECEITA') return '<span class="badge badge-in">Entrada</span>';
+  if (t === 'REEMBOLSO') return '<span class="badge badge-in">Reembolso</span>';
+  if (t === 'RESGATE') return '<span class="badge badge-info">Resgate</span>';
+  if (t === 'APORTE') return '<span class="badge badge-info">Aporte</span>';
+  if (t === 'PAGTO_FATURA') return '<span class="badge badge-warn">Pagto. Fatura</span>';
+  return '<span class="badge badge-out">Saída</span>';
+}
+
+function getStatusBadge(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'QUITADO' || s === 'PAGA' || s === 'REALIZADO') {
+    return `<span class="badge badge-in">${normalizeTextDisplay(s.toLowerCase())}</span>`;
+  }
+  return `<span class="badge badge-warn">${normalizeTextDisplay((s || 'PENDENTE').toLowerCase())}</span>`;
+}
+
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.2s';
+    setTimeout(() => toast.remove(), 220);
+  }, 3600);
+}
+
+/* ==========================================================================
+   2. ESTADO LOCAL, CONFIGURAÇÃO E SINCRONIZAÇÃO
+   ========================================================================== */
+
+function loadSavedState() {
+  try {
+    const rawCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
+    if (rawCfg) {
+      state.config = Object.assign(state.config, JSON.parse(rawCfg));
+    }
+    const rawCache = localStorage.getItem(STORAGE_KEYS.CACHE);
+    if (rawCache) {
+      state.snapshot = JSON.parse(rawCache);
+    }
+    const rawPeople = localStorage.getItem(STORAGE_KEYS.PEOPLE);
+    if (rawPeople) {
+      const parsedPeople = JSON.parse(rawPeople);
+      if (Array.isArray(parsedPeople) && parsedPeople.length) {
+        state.people = parsedPeople;
+      }
+    }
+  } catch (err) {
+    console.warn('Falha ao carregar armazenamento local:', err);
+  }
+
+  const urlInput = document.getElementById('cfgApiUrl');
+  const keyInput = document.getElementById('cfgApiKey');
+  if (urlInput) urlInput.value = state.config.apiUrl || '';
+  if (keyInput) keyInput.value = state.config.apiKey || '';
+
+  const today = new Date().toISOString().slice(0, 10);
+  const dateInput = document.getElementById('txData');
+  if (dateInput && !dateInput.value) dateInput.value = today;
+
+  const invDateInput = document.getElementById('invData');
+  if (invDateInput && !invDateInput.value) invDateInput.value = today;
+
+  if (state.snapshot && state.snapshot.last_sync_ts) {
+    updateSyncBadge('Cache local carregado • Clique em Sincronizar', 'ok');
+  }
+
+  renderPeopleControls();
+  renderAll();
+}
+
+function saveConfig(event) {
+  event.preventDefault();
+  const apiUrl = document.getElementById('cfgApiUrl').value.trim();
+  const apiKey = document.getElementById('cfgApiKey').value.trim();
+
+  if (!apiUrl || !apiKey) {
+    showToast('Preencha a URL do Web App e a chave API_ACCESS_KEY.', 'warn');
+    return;
+  }
+
+  state.config = { apiUrl, apiKey };
+  localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(state.config));
+  updateSyncBadge('Configuração salva • Sincronizando...', 'ok');
+  showToast('Conexão salva neste navegador.', 'success');
+  syncFromBackend();
+}
+
+function updateSyncBadge(text, variant = '') {
+  const badge = document.getElementById('syncStatus');
+  if (!badge) return;
+  badge.textContent = text;
+  badge.className = `sync-badge ${variant}`.trim();
+}
+
+async function syncFromBackend() {
+  if (!state.config.apiUrl || !state.config.apiKey) {
+    updateSyncBadge('Configure URL e Chave na aba Configurações', 'warn');
+    switchTab('config');
+    return;
+  }
+
+  updateSyncBadge('Sincronizando com Google Sheets...', 'warn');
+  try {
+    const sep = state.config.apiUrl.indexOf('?') === -1 ? '?' : '&';
+    const endpoint = `${state.config.apiUrl}${sep}action=sync&api_key=${encodeURIComponent(state.config.apiKey)}`;
+
+    const resp = await fetch(endpoint);
+    const json = await resp.json();
+
+    if (!json.ok) {
+      throw new Error(json.error || 'Erro ao sincronizar com o Apps Script.');
+    }
+
+    if (json.data) {
+      state.snapshot = Object.assign({}, state.snapshot || {}, json.data);
+      localStorage.setItem(STORAGE_KEYS.CACHE, JSON.stringify(state.snapshot));
+    }
+
+    const stamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    updateSyncBadge(`Sincronizado às ${stamp}`, 'ok');
+    renderPeopleControls();
+    renderAll();
+    showToast(`Dados atualizados às ${stamp}.`, 'success');
+  } catch (err) {
+    updateSyncBadge('Falha na sincronização (usando cache local)', 'warn');
+    console.error(err);
+    showToast(`Erro ao sincronizar: ${err.message}`, 'error');
+  }
+}
+
+async function postToBackend(action, payload) {
+  if (!state.config.apiUrl || !state.config.apiKey) {
+    throw new Error('Configure a URL e a chave em Configurações antes de lançar.');
+  }
+
+  const resp = await fetch(state.config.apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      api_key: state.config.apiKey,
+      action,
+      payload
+    })
+  });
+
+  const json = await resp.json();
+  if (!json.ok) {
+    throw new Error(json.error || 'Falha ao gravar no backend.');
+  }
+  return json.result;
+}
+
+/* ==========================================================================
+   3. PESSOAS / TERCEIROS E CONTROLES DO MODAL
+   ========================================================================== */
 
 function syncPeopleListFromData() {
   const set = new Set(DEFAULT_PEOPLE);
@@ -114,9 +306,26 @@ function renderPeopleControls() {
 
   const chipsEl = document.getElementById('peopleChips');
   if (chipsEl) {
-    chipsEl.innerHTML = state.people
-      .map((p) => `<span class="chip">${p}</span>`)
+    const allChip = `<button type="button" class="chip ${state.selectedPersonFilter === 'ALL' ? 'active' : ''}" data-person="ALL">Todos</button>`;
+    const personChips = state.people
+      .map((p) => `<button type="button" class="chip ${state.selectedPersonFilter === p ? 'active' : ''}" data-person="${p}">${p}</button>`)
       .join('');
+    chipsEl.innerHTML = allChip + personChips;
+
+    chipsEl.querySelectorAll('.chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        state.selectedPersonFilter = chip.dataset.person;
+        renderPeopleControls();
+        renderAll();
+      });
+    });
+  }
+
+  const badge = document.getElementById('terceirosActiveFilterBadge');
+  if (badge) {
+    badge.textContent = state.selectedPersonFilter === 'ALL'
+      ? 'Exibindo: Todos'
+      : `Filtrado por: ${state.selectedPersonFilter}`;
   }
 
   const respSelect = document.getElementById('txResponsavel');
@@ -153,125 +362,7 @@ function handleAddPerson(event) {
   }
   input.value = '';
   renderPeopleControls();
-  alert(`Pessoa "${clean}" adicionada para lançamentos de terceiros e reembolsos.`);
-}
-
-function loadSavedState() {
-  try {
-    const rawCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
-    if (rawCfg) {
-      state.config = Object.assign(state.config, JSON.parse(rawCfg));
-    }
-    const rawCache = localStorage.getItem(STORAGE_KEYS.CACHE);
-    if (rawCache) {
-      state.snapshot = JSON.parse(rawCache);
-    }
-    const rawPeople = localStorage.getItem(STORAGE_KEYS.PEOPLE);
-    if (rawPeople) {
-      const parsedPeople = JSON.parse(rawPeople);
-      if (Array.isArray(parsedPeople) && parsedPeople.length) {
-        state.people = parsedPeople;
-      }
-    }
-  } catch (err) {
-    console.warn('Falha ao carregar armazenamento local:', err);
-  }
-
-  const urlInput = document.getElementById('cfgApiUrl');
-  const keyInput = document.getElementById('cfgApiKey');
-  if (urlInput) urlInput.value = state.config.apiUrl || '';
-  if (keyInput) keyInput.value = state.config.apiKey || '';
-
-  const today = new Date().toISOString().slice(0, 10);
-  const dateInput = document.getElementById('txData');
-  if (dateInput && !dateInput.value) dateInput.value = today;
-
-  const invDateInput = document.getElementById('invData');
-  if (invDateInput && !invDateInput.value) invDateInput.value = today;
-
-  renderPeopleControls();
-  renderAll();
-}
-
-function saveConfig(event) {
-  event.preventDefault();
-  const apiUrl = document.getElementById('cfgApiUrl').value.trim();
-  const apiKey = document.getElementById('cfgApiKey').value.trim();
-
-  if (!apiUrl || !apiKey) {
-    alert('Preencha a URL do Web App e a chave API_ACCESS_KEY.');
-    return;
-  }
-
-  state.config = { apiUrl, apiKey };
-  localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(state.config));
-  updateSyncBadge('Configuração salva. Clique em Sincronizar.');
-  alert('Configuração salva neste navegador.');
-}
-
-function updateSyncBadge(text) {
-  const badge = document.getElementById('syncStatus');
-  if (badge) badge.textContent = text;
-}
-
-async function syncFromBackend() {
-  if (!state.config.apiUrl || !state.config.apiKey) {
-    updateSyncBadge('Configure URL e Chave na aba Configurações');
-    switchTab('config');
-    return;
-  }
-
-  updateSyncBadge('Sincronizando...');
-  try {
-    const sep = state.config.apiUrl.indexOf('?') === -1 ? '?' : '&';
-    const sinceParam = state.snapshot && state.snapshot.last_sync_ts
-      ? `&since=${encodeURIComponent(state.snapshot.last_sync_ts)}`
-      : '';
-    const endpoint = `${state.config.apiUrl}${sep}action=sync&api_key=${encodeURIComponent(state.config.apiKey)}${sinceParam}`;
-
-    const resp = await fetch(endpoint);
-    const json = await resp.json();
-
-    if (!json.ok) {
-      throw new Error(json.error || 'Erro ao sincronizar com o Apps Script.');
-    }
-
-    if (json.data && json.data.has_changes !== false) {
-      state.snapshot = Object.assign({}, state.snapshot || {}, json.data);
-      localStorage.setItem(STORAGE_KEYS.CACHE, JSON.stringify(state.snapshot));
-    }
-
-    const stamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    updateSyncBadge(`Sincronizado às ${stamp}`);
-    renderPeopleControls();
-    renderAll();
-  } catch (err) {
-    updateSyncBadge('Falha na sincronização (usando cache local)');
-    console.error(err);
-    alert(`Erro ao sincronizar: ${err.message}`);
-  }
-}
-
-async function postToBackend(action, payload) {
-  if (!state.config.apiUrl || !state.config.apiKey) {
-    throw new Error('Configure a URL e a chave em Configurações antes de lançar.');
-  }
-
-  const resp = await fetch(state.config.apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({
-      api_key: state.config.apiKey,
-      action,
-      payload
-    })
-  });
-
-  const json = await resp.json();
-  if (!json.ok) {
-    throw new Error(json.error || 'Falha ao gravar no backend.');
-  }
-  return json.result;
+  showToast(`Pessoa "${clean}" adicionada com sucesso.`, 'success');
 }
 
 function evaluateSplitWarning() {
@@ -326,19 +417,11 @@ function updateQuickFormVisibility() {
   }
 
   if (novaPessoaInput) {
-    if (resp === '__NOVA_PESSOA__') {
-      novaPessoaInput.classList.remove('hidden');
-    } else {
-      novaPessoaInput.classList.add('hidden');
-    }
+    novaPessoaInput.classList.toggle('hidden', resp !== '__NOVA_PESSOA__');
   }
 
   if (outroBancoInput) {
-    if (contaVal === '__OUTRO_BANCO__') {
-      outroBancoInput.classList.remove('hidden');
-    } else {
-      outroBancoInput.classList.add('hidden');
-    }
+    outroBancoInput.classList.toggle('hidden', contaVal !== '__OUTRO_BANCO__');
   }
 
   evaluateSplitWarning();
@@ -367,6 +450,10 @@ function resolveSelectedPerson() {
   return resp;
 }
 
+/* ==========================================================================
+   4. AÇÕES DE ESCRITA / EXCLUSÃO NO BACKEND
+   ========================================================================== */
+
 async function handleQuickAddSubmit(event) {
   event.preventDefault();
   const btn = document.getElementById('btnSubmitTx');
@@ -375,10 +462,10 @@ async function handleQuickAddSubmit(event) {
 
   try {
     const tipo = document.getElementById('txTipo').value;
-    const descricao = document.getElementById('txDescricao').value.trim();
+    const descricao = normalizeTextDisplay(document.getElementById('txDescricao').value);
     const valor = Number(document.getElementById('txValor').value);
     const data = document.getElementById('txData').value;
-    const categoria = document.getElementById('txCategoria').value.trim() || 'Geral';
+    const categoria = document.getElementById('txCategoria').value || 'Outros';
     const conta = resolveSelectedAccount();
     const idemKey = `pwa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -428,9 +515,9 @@ async function handleQuickAddSubmit(event) {
       });
 
       if (res && res.alerta_divergencia) {
-        alert(`Registrado, mas atenção à divisão:\n${res.alerta_divergencia}`);
+        showToast(`Registrado com aviso: ${res.alerta_divergencia}`, 'warn');
       } else {
-        alert('Compra no cartão registrada com sucesso!');
+        showToast('Compra no cartão registrada com sucesso!', 'success');
       }
     } else if (tipo === 'REEMBOLSO') {
       const pessoaId = resolveSelectedPerson();
@@ -446,7 +533,7 @@ async function handleQuickAddSubmit(event) {
         account_id: conta,
         valor_recebido: valor
       });
-      alert('Reembolso registrado com sucesso!');
+      showToast('Reembolso registrado com sucesso!', 'success');
     } else {
       await postToBackend('createTransaction', {
         idempotency_key: idemKey,
@@ -459,7 +546,7 @@ async function handleQuickAddSubmit(event) {
         valor,
         status: 'REALIZADO'
       });
-      alert('Movimentação registrada com sucesso!');
+      showToast('Movimentação registrada com sucesso!', 'success');
     }
 
     document.getElementById('quickAddForm').reset();
@@ -467,10 +554,29 @@ async function handleQuickAddSubmit(event) {
     closeModal();
     await syncFromBackend();
   } catch (err) {
-    alert(`Erro ao salvar: ${err.message}`);
+    showToast(`Erro ao salvar: ${err.message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Confirmar e Sincronizar';
+  }
+}
+
+async function handleDeleteMovement(txId, label) {
+  if (!txId) {
+    showToast('Não foi possível identificar o ID deste lançamento.', 'error');
+    return;
+  }
+  const ok = confirm(`Deseja realmente excluir o lançamento "${label}"?`);
+  if (!ok) return;
+
+  try {
+    updateSyncBadge('Excluindo lançamento...', 'warn');
+    await postToBackend('deleteTransaction', { tx_id: txId });
+    showToast('Lançamento excluído com sucesso.', 'success');
+    await syncFromBackend();
+  } catch (err) {
+    updateSyncBadge('Erro ao excluir', 'warn');
+    showToast(`Falha ao excluir: ${err.message}`, 'error');
   }
 }
 
@@ -504,10 +610,10 @@ async function handleInvestSubmit(event) {
 
     document.getElementById('investForm').reset();
     document.getElementById('invData').value = new Date().toISOString().slice(0, 10);
-    alert('Operação de investimento registrada!');
+    showToast(`Operação em ${ticker} registrada com sucesso!`, 'success');
     await syncFromBackend();
   } catch (err) {
-    alert(`Erro ao registrar investimento: ${err.message}`);
+    showToast(`Erro ao registrar investimento: ${err.message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Salvar Investimento';
@@ -516,13 +622,19 @@ async function handleInvestSubmit(event) {
 
 async function handleUpdateQuotes() {
   try {
+    updateSyncBadge('Atualizando cotações...', 'warn');
     await postToBackend('refreshQuotes', {});
-    alert('Cotações atualizadas!');
+    showToast('Cotações atualizadas!', 'success');
     await syncFromBackend();
   } catch (err) {
-    alert(`Não foi possível atualizar cotações: ${err.message}`);
+    updateSyncBadge('Falha nas cotações', 'warn');
+    showToast(`Não foi possível atualizar cotações: ${err.message}`, 'error');
   }
 }
+
+/* ==========================================================================
+   5. RENDERIZAÇÃO DE GRÁFICO, ACCORDIONS E ABAS
+   ========================================================================== */
 
 function renderMonthlyChart(scheduleRows) {
   const container = document.getElementById('monthlyChartContainer');
@@ -539,10 +651,10 @@ function renderMonthlyChart(scheduleRows) {
   );
 
   const barWidth = 22;
-  const gap = 24;
-  const chartHeight = 170;
-  const baseY = 125;
-  const width = Math.max(420, scheduleRows.length * (barWidth * 2 + gap) + 40);
+  const gap = 30;
+  const chartHeight = 178;
+  const baseY = 128;
+  const width = Math.max(460, scheduleRows.length * (barWidth * 2 + gap) + 40);
 
   const barsSvg = scheduleRows.map((item, idx) => {
     const x0 = 20 + idx * (barWidth * 2 + gap);
@@ -553,16 +665,16 @@ function renderMonthlyChart(scheduleRows) {
     const ySaldo = item.saldoFinal >= 0 ? baseY - hSaldo : baseY;
     const colorSaldo = item.saldoFinal >= 0 ? '#22c55e' : '#ef4444';
 
-    const labelShort = String(item.mes || '').slice(2);
+    const labelShort = formatMonthShort(item.mes);
     return `
       <g>
         <rect x="${x0}" y="${yPagar}" width="${barWidth}" height="${hPagar}" rx="4" fill="#f59e0b">
-          <title>${item.mes} • A pagar / saídas: ${formatBRL(item.aPagar)}</title>
+          <title>${labelShort} • A pagar / saídas: ${formatBRL(item.aPagar)}</title>
         </rect>
         <rect x="${x0 + barWidth + 4}" y="${ySaldo}" width="${barWidth}" height="${hSaldo}" rx="4" fill="${colorSaldo}">
-          <title>${item.mes} • Saldo final na conta: ${formatBRL(item.saldoFinal)}</title>
+          <title>${labelShort} • Saldo final na conta: ${formatBRL(item.saldoFinal)}</title>
         </rect>
-        <text x="${x0 + barWidth + 2}" y="${chartHeight - 10}" text-anchor="middle" fill="#94a3b8" font-size="11">${labelShort}</text>
+        <text x="${x0 + barWidth + 2}" y="${chartHeight - 12}" text-anchor="middle" fill="#94a3b8" font-size="11">${labelShort}</text>
       </g>
     `;
   }).join('');
@@ -579,6 +691,475 @@ function renderMonthlyChart(scheduleRows) {
   `;
 }
 
+function renderMovementsSection(movs, currentMonthYm) {
+  const movListEl = document.getElementById('movimentacoesList');
+  if (!movListEl) return;
+
+  // Popula opções dinâmicas de mês e conta nos filtros
+  const monthSelect = document.getElementById('filterMovMonth');
+  const accountSelect = document.getElementById('filterMovAccount');
+  if (monthSelect && accountSelect) {
+    const monthsSet = new Set();
+    const accountsSet = new Set();
+    movs.forEach((m) => {
+      const ym = String(m.data_caixa || m.data_competencia || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(ym)) monthsSet.add(ym);
+      const acc = String(m.account_id || '').trim();
+      if (acc) accountsSet.add(acc);
+    });
+
+    const prevMonth = state.movFilters.month;
+    monthSelect.innerHTML =
+      '<option value="ALL">Todos os meses</option>' +
+      Array.from(monthsSet)
+        .sort((a, b) => b.localeCompare(a))
+        .map((ym) => `<option value="${ym}">${formatMonthLabel(ym)}</option>`)
+        .join('');
+    monthSelect.value = monthsSet.has(prevMonth) ? prevMonth : 'ALL';
+
+    const prevAcc = state.movFilters.account;
+    accountSelect.innerHTML =
+      '<option value="ALL">Todas as contas</option>' +
+      Array.from(accountsSet)
+        .sort()
+        .map((acc) => `<option value="${acc}">${acc}</option>`)
+        .join('');
+    accountSelect.value = accountsSet.has(prevAcc) ? prevAcc : 'ALL';
+  }
+
+  // Aplica filtros ativos
+  const filtered = movs.filter((m) => {
+    const ym = String(m.data_caixa || m.data_competencia || '').slice(0, 7);
+    const tipo = String(m.tipo_mov || '').toUpperCase();
+    const acc = String(m.account_id || '').trim();
+    const descNorm = normalizeTextDisplay(m.descricao || '').toLowerCase();
+    const catNorm = normalizeTextDisplay(m.categoria_id || '').toLowerCase();
+
+    if (state.movFilters.month !== 'ALL' && ym !== state.movFilters.month) return false;
+    if (state.movFilters.type !== 'ALL' && tipo !== state.movFilters.type) return false;
+    if (state.movFilters.account !== 'ALL' && acc !== state.movFilters.account) return false;
+    if (state.movFilters.search) {
+      const q = state.movFilters.search.toLowerCase();
+      if (!descNorm.includes(q) && !catNorm.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    movListEl.innerHTML = '<p class="muted">Nenhuma movimentação encontrada para os filtros selecionados.</p>';
+    return;
+  }
+
+  // Ordena por data decrescente e agrupa por mês
+  const sorted = [...filtered].sort((a, b) => {
+    const da = String(a.data_caixa || a.data_competencia || '');
+    const db = String(b.data_caixa || b.data_competencia || '');
+    return db.localeCompare(da);
+  });
+
+  const groupsMap = new Map();
+  sorted.forEach((m) => {
+    const ym = String(m.data_caixa || m.data_competencia || '').slice(0, 7) || '0000-00';
+    if (!groupsMap.has(ym)) {
+      groupsMap.set(ym, { key: ym, netTotal: 0, items: [] });
+    }
+    const g = groupsMap.get(ym);
+    const v = Number(m.valor || 0);
+    const t = String(m.tipo_mov || '').toUpperCase();
+    const isPositive = (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE');
+    g.netTotal += isPositive ? v : -v;
+    g.items.push(m);
+  });
+
+  const groups = Array.from(groupsMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+
+  movListEl.innerHTML = groups.map((g, idx) => {
+    const title = g.key === '0000-00' ? 'SEM DATA' : formatMonthLabel(g.key);
+    const totalClass = g.netTotal < 0 ? 'month-balance-neg' : 'month-balance-ok';
+    const isOpen = state.movFilters.month !== 'ALL' || g.key === currentMonthYm || idx === 0;
+
+    const rowsHtml = g.items.map((m) => {
+      const dtBr = formatDateBR(m.data_caixa || m.data_competencia);
+      const desc = normalizeTextDisplay(m.descricao || 'Sem descrição');
+      const cat = normalizeTextDisplay(m.categoria_id || '');
+      const t = String(m.tipo_mov || '').toUpperCase();
+      const isPositive = (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE');
+      const sign = isPositive ? '+' : '-';
+      const amtClass = isPositive ? 'amt-pos' : 'amt-neg';
+      const badge = getMovementBadge(t);
+
+      return `
+        <div class="month-detail-row">
+          <div>
+            <strong>${desc}</strong> ${badge}
+            <span class="month-detail-meta">${dtBr} • ${m.account_id || 'Sem Conta'}${cat ? ` • ${cat}` : ''}</span>
+          </div>
+          <div class="month-detail-right">
+            <strong class="${amtClass}">${sign} ${formatBRL(m.valor)}</strong>
+            <button type="button" class="btn-delete" data-tx-id="${m.tx_id || ''}" data-tx-label="${desc}" title="Excluir lançamento">🗑️</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <details class="month-block" ${isOpen ? 'open' : ''}>
+        <summary class="month-header">
+          <span class="month-header-left">
+            <span class="month-chevron">▶</span>
+            <span class="month-title">${title}</span>
+            <span class="month-count">${g.items.length}</span>
+          </span>
+          <span class="${totalClass}">Saldo mês: ${formatBRL(g.netTotal)}</span>
+        </summary>
+        <div class="month-details">
+          ${rowsHtml}
+        </div>
+      </details>
+    `;
+  }).join('');
+
+  movListEl.querySelectorAll('.btn-delete').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteMovement(btn.dataset.txId, btn.dataset.txLabel);
+    });
+  });
+}
+
+function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
+  const detailContainer = document.getElementById('cartoesByMonthAndCardList');
+  const summaryContainer = document.getElementById('cartoesMonthlySummaryList');
+  if (!detailContainer || !summaryContainer) return;
+
+  const openParcelas = parcelas.filter(
+    (p) => String(p.status_fatura || '').toUpperCase() !== 'PAGA'
+  );
+
+  if (!openParcelas.length) {
+    detailContainer.innerHTML = '<p class="muted">Nenhuma fatura ou parcela em aberto registrada.</p>';
+    summaryContainer.innerHTML = '<p class="muted">Nenhuma soma mensal de fatura disponível.</p>';
+    return;
+  }
+
+  const byMonth = new Map();
+
+  openParcelas.forEach((p) => {
+    const rawMonth = String(p.competencia_fatura || '').slice(0, 7);
+    const monthKey = /^\d{4}-\d{2}$/.test(rawMonth) ? rawMonth : '0000-00';
+    const cardName = String(p.cartao_id || 'Cartão').trim() || 'Cartão';
+
+    const totalBanco = Number(p.valor_fatura_banco || 0);
+    const minhaParte = Number(p.minha_parte_liquida || 0);
+    const parteTerceiros = Number(p.terceiro_liquido_a_receber || 0);
+    const desconto = Number(p.desconto_rateado || 0);
+
+    if (!byMonth.has(monthKey)) {
+      byMonth.set(monthKey, {
+        monthKey,
+        totalGeral: 0,
+        totalMinhaParte: 0,
+        totalTerceiros: 0,
+        totalDesconto: 0,
+        cards: new Map()
+      });
+    }
+
+    const mBucket = byMonth.get(monthKey);
+    mBucket.totalGeral += totalBanco;
+    mBucket.totalMinhaParte += minhaParte;
+    mBucket.totalTerceiros += parteTerceiros;
+    mBucket.totalDesconto += desconto;
+
+    if (!mBucket.cards.has(cardName)) {
+      mBucket.cards.set(cardName, {
+        cardName,
+        totalCartao: 0,
+        minhaParteCartao: 0,
+        terceirosCartao: 0,
+        items: []
+      });
+    }
+
+    const cBucket = mBucket.cards.get(cardName);
+    cBucket.totalCartao += totalBanco;
+    cBucket.minhaParteCartao += minhaParte;
+    cBucket.terceirosCartao += parteTerceiros;
+    cBucket.items.push(p);
+  });
+
+  const sortedMonths = Array.from(byMonth.values()).sort((a, b) =>
+    a.monthKey.localeCompare(b.monthKey)
+  );
+
+  detailContainer.innerHTML = sortedMonths.map((m, idx) => {
+    const monthTitle = m.monthKey === '0000-00' ? 'SEM MÊS DEFINIDO' : formatMonthLabel(m.monthKey);
+    const isOpen = m.monthKey === currentMonthYm || idx === 0;
+    const cardsArr = Array.from(m.cards.values()).sort((a, b) =>
+      a.cardName.localeCompare(b.cardName)
+    );
+
+    const cardsHtml = cardsArr.map((c) => {
+      const itemsHtml = c.items.map((item) => {
+        const descParcela = normalizeTextDisplay(item.descricao_parcela || 'Compra');
+        const minha = formatBRL(item.minha_parte_liquida || 0);
+        const terc = Number(item.terceiro_liquido_a_receber || 0);
+        const desc = Number(item.desconto_rateado || 0);
+        const tercTxt = terc > 0 ? ` • ${item.pessoa_id || 'Terceiro'}: ${formatBRL(terc)}` : '';
+        const descTxt = desc > 0 ? ` • Desc.: ${formatBRL(desc)}` : '';
+
+        return `
+          <div class="month-detail-row">
+            <div>
+              <strong>${descParcela}</strong> <span class="badge badge-info">${item.num_parcela || 1}/${item.total_parcelas || 1}</span>
+              <span class="month-detail-meta">Minha parte: ${minha}${tercTxt}${descTxt}</span>
+            </div>
+            <strong>${formatBRL(item.valor_fatura_banco)}</strong>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="card-subgroup">
+          <div class="card-subgroup-header">
+            <span>${c.cardName}</span>
+            <span>Fatura: ${formatBRL(c.totalCartao)}</span>
+          </div>
+          <div class="card-split-line">
+            <span>Minha parte: <strong>${formatBRL(c.minhaParteCartao)}</strong></span>
+            <span>Terceiros / Rateio: <strong>${formatBRL(c.terceirosCartao)}</strong></span>
+          </div>
+          <div class="list-stack" style="gap: 6px;">
+            ${itemsHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <details class="month-block" ${isOpen ? 'open' : ''}>
+        <summary class="month-header">
+          <span class="month-header-left">
+            <span class="month-chevron">▶</span>
+            <span class="month-title">${monthTitle}</span>
+            <span class="month-count">${cardsArr.length} cartão(ões)</span>
+          </span>
+          <span class="month-balance-ok">Fatura Total: ${formatBRL(m.totalGeral)}</span>
+        </summary>
+        ${cardsHtml}
+      </details>
+    `;
+  }).join('');
+
+  summaryContainer.innerHTML = sortedMonths.map((m) => {
+    const monthTitle = m.monthKey === '0000-00' ? 'SEM MÊS DEFINIDO' : formatMonthLabel(m.monthKey);
+    return `
+      <div class="month-block">
+        <div class="month-header">
+          <span class="month-title">${monthTitle}</span>
+          <span class="month-balance-ok">Soma Total: ${formatBRL(m.totalGeral)}</span>
+        </div>
+        <div class="month-summary-box">
+          <div class="summary-pill">
+            <span>Fatura Total (Cartões)</span>
+            <strong>${formatBRL(m.totalGeral)}</strong>
+          </div>
+          <div class="summary-pill">
+            <span>Minha Parte (Própria)</span>
+            <strong class="amt-pos">${formatBRL(m.totalMinhaParte)}</strong>
+          </div>
+          <div class="summary-pill">
+            <span>Terceiros / Rateio</span>
+            <strong style="color: var(--warning);">${formatBRL(m.totalTerceiros)}</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderThirdPartiesSection(terceiros, currentMonthYm) {
+  const summaryGridEl = document.getElementById('terceirosSummaryGrid');
+  const listEl = document.getElementById('terceirosList');
+  if (!summaryGridEl || !listEl) return;
+
+  // Resumo de saldo pendente por pessoa (sempre visível)
+  const pendingByPerson = {};
+  terceiros.forEach((t) => {
+    const status = String(t.status || '').toUpperCase();
+    if (status === 'QUITADO') return;
+    const person = normalizePersonName(t.pessoa_id || 'TERCEIRO');
+    pendingByPerson[person] = (pendingByPerson[person] || 0) + Number(t.valor_ajustado_cobrado || 0);
+  });
+
+  const pendingEntries = Object.entries(pendingByPerson);
+  summaryGridEl.innerHTML = pendingEntries.length
+    ? pendingEntries
+        .sort((a, b) => b[1] - a[1])
+        .map(([person, total]) => `
+          <div class="bank-card">
+            <span class="bank-name">${person}</span>
+            <strong class="bank-balance warn">${formatBRL(total)}</strong>
+          </div>
+        `)
+        .join('')
+    : '<p class="muted">Nenhum saldo pendente de terceiros no momento.</p>';
+
+  // Filtra extrato pela pessoa selecionada nos chips
+  const filtered = state.selectedPersonFilter === 'ALL'
+    ? terceiros
+    : terceiros.filter((t) => normalizePersonName(t.pessoa_id) === state.selectedPersonFilter);
+
+  if (!filtered.length) {
+    listEl.innerHTML = '<p class="muted">Nenhum lançamento encontrado para esta pessoa.</p>';
+    return;
+  }
+
+  const groupsMap = new Map();
+  [...filtered].reverse().forEach((t) => {
+    const ym = String(t.competencia || '').slice(0, 7) || '0000-00';
+    if (!groupsMap.has(ym)) {
+      groupsMap.set(ym, { key: ym, total: 0, items: [] });
+    }
+    const g = groupsMap.get(ym);
+    g.total += Number(t.valor_ajustado_cobrado || 0);
+    g.items.push(t);
+  });
+
+  const groups = Array.from(groupsMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+
+  listEl.innerHTML = groups.map((g, idx) => {
+    const title = g.key === '0000-00' ? 'SEM COMPETÊNCIA' : formatMonthLabel(g.key);
+    const isOpen = g.key === currentMonthYm || idx === 0;
+
+    const rowsHtml = g.items.map((t) => {
+      const desc = normalizeTextDisplay(t.descricao || t.tipo_evento || 'Lançamento');
+      const statusBadge = getStatusBadge(t.status);
+      return `
+        <div class="month-detail-row">
+          <div>
+            <strong>${desc}</strong> ${statusBadge}
+            <span class="month-detail-meta">Pessoa: ${t.pessoa_id || '-'} • Competência: ${formatMonthShort(t.competencia)}</span>
+          </div>
+          <strong>${formatBRL(t.valor_ajustado_cobrado)}</strong>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <details class="month-block" ${isOpen ? 'open' : ''}>
+        <summary class="month-header">
+          <span class="month-header-left">
+            <span class="month-chevron">▶</span>
+            <span class="month-title">${title}</span>
+            <span class="month-count">${g.items.length}</span>
+          </span>
+          <span class="month-balance-ok">Total: ${formatBRL(g.total)}</span>
+        </summary>
+        <div class="month-details">
+          ${rowsHtml}
+        </div>
+      </details>
+    `;
+  }).join('');
+}
+
+function renderInvestmentsSection(investimentos, cotacoesCache) {
+  const consolidatedEl = document.getElementById('investimentosConsolidatedList');
+  const historyEl = document.getElementById('investimentosList');
+  if (!consolidatedEl || !historyEl) return;
+
+  if (!investimentos.length) {
+    consolidatedEl.innerHTML = '<p class="muted">Nenhuma posição consolidada ainda.</p>';
+    historyEl.innerHTML = '<p class="muted">Nenhuma operação de investimento registrada na base ainda.</p>';
+    return;
+  }
+
+  // Mapeia cotações em cache por ticker (se houver)
+  const quoteMap = {};
+  if (Array.isArray(cotacoesCache)) {
+    cotacoesCache.forEach((c) => {
+      const t = String(c.ticker || '').toUpperCase().trim();
+      if (t) quoteMap[t] = Number(c.preco_atual || 0);
+    });
+  }
+
+  // Agrupa posição consolidada por ticker
+  const posMap = new Map();
+  investimentos.forEach((op) => {
+    const ticker = String(op.ticker || op.nome_ativo || 'ATIVO').toUpperCase().trim();
+    const tipo = String(op.tipo_op || '').toUpperCase();
+    const qtd = Number(op.quantidade || 0);
+    const val = Number(op.valor_total || 0);
+
+    if (!posMap.has(ticker)) {
+      posMap.set(ticker, {
+        ticker,
+        classe: op.classe_ativo || 'ACAO',
+        qtdLiquida: 0,
+        custoTotal: 0,
+        proventos: 0
+      });
+    }
+
+    const pos = posMap.get(ticker);
+    if (tipo === 'COMPRA' || tipo === 'APORTE' || tipo === 'SALDO_INICIAL') {
+      pos.qtdLiquida += qtd;
+      pos.custoTotal += val;
+    } else if (tipo === 'VENDA' || tipo === 'RESGATE') {
+      const pmAtual = pos.qtdLiquida > 0 ? pos.custoTotal / pos.qtdLiquida : 0;
+      pos.qtdLiquida = Math.max(0, pos.qtdLiquida - qtd);
+      pos.custoTotal = Math.max(0, pos.custoTotal - pmAtual * qtd);
+    } else if (tipo === 'DIVIDENDO' || tipo === 'JCP' || tipo === 'RENDIMENTO_RF') {
+      pos.proventos += val;
+    }
+  });
+
+  const positions = Array.from(posMap.values()).filter(
+    (p) => p.qtdLiquida > 0 || p.custoTotal > 0 || p.proventos > 0
+  );
+
+  consolidatedEl.innerHTML = positions.map((p) => {
+    const pm = p.qtdLiquida > 0 ? p.custoTotal / p.qtdLiquida : 0;
+    const cotAtual = quoteMap[p.ticker] || 0;
+    const valorMercado = cotAtual > 0 && p.qtdLiquida > 0 ? cotAtual * p.qtdLiquida : p.custoTotal;
+    const cotInfo = cotAtual > 0 ? ` • Cotação: ${formatBRL(cotAtual)}` : '';
+    const provInfo = p.proventos > 0 ? ` • Proventos: ${formatBRL(p.proventos)}` : '';
+
+    return `
+      <div class="list-item">
+        <div>
+          <strong>${p.ticker}</strong> <span class="badge badge-info">${p.classe}</span>
+          <span class="month-detail-meta">Qtd: ${p.qtdLiquida} • PM: ${formatBRL(pm)}${cotInfo}${provInfo}</span>
+        </div>
+        <strong>${formatBRL(valorMercado)}</strong>
+      </div>
+    `;
+  }).join('');
+
+  // Histórico de ordens/operações
+  historyEl.innerHTML = [...investimentos].reverse().map((op) => {
+    const dtBr = formatDateBR(op.data_op || op.data_operacao);
+    const tipo = String(op.tipo_op || '').toUpperCase();
+    const isBuy = tipo === 'COMPRA' || tipo === 'APORTE';
+    const badge = isBuy
+      ? '<span class="badge badge-info">Compra</span>'
+      : tipo === 'VENDA' || tipo === 'RESGATE'
+        ? '<span class="badge badge-warn">Venda</span>'
+        : '<span class="badge badge-in">Provento</span>';
+
+    return `
+      <div class="list-item">
+        <div>
+          <strong>${op.ticker || op.nome_ativo}</strong> ${badge}
+          <span class="month-detail-meta">${dtBr} • ${op.classe_ativo || ''} • Qtd: ${op.quantidade || 0}</span>
+        </div>
+        <strong>${formatBRL(op.valor_total)}</strong>
+      </div>
+    `;
+  }).join('');
+}
+
 function renderAll() {
   const snap = state.snapshot;
   const movs = (snap && Array.isArray(snap.movimentacoes))
@@ -587,9 +1168,11 @@ function renderAll() {
   const parcelas = (snap && Array.isArray(snap.parcelas_cartao)) ? snap.parcelas_cartao : [];
   const terceiros = (snap && Array.isArray(snap.terceiros_razao)) ? snap.terceiros_razao : [];
   const investimentos = (snap && Array.isArray(snap.investimentos)) ? snap.investimentos : [];
+  const cotacoesCache = (snap && Array.isArray(snap.cotacoes_cache)) ? snap.cotacoes_cache : [];
   const proj = (snap && Array.isArray(snap.projecao_2026_2027)) ? snap.projecao_2026_2027 : [];
 
   const todayIso = new Date().toISOString().slice(0, 10);
+  const currentMonthYm = todayIso.slice(0, 7);
   let caixaHoje = 0;
 
   const saldosPorBanco = {};
@@ -597,24 +1180,26 @@ function renderAll() {
   const saidasMovPorMes = {};
   const itensPorMes = {};
 
-  function pushMesItem(mesKey, label, valorStr) {
+  function pushMesItem(mesKey, label, valorStr, isPositive) {
     if (!mesKey) return;
     if (!itensPorMes[mesKey]) itensPorMes[mesKey] = [];
-    itensPorMes[mesKey].push({ label, valorStr });
+    itensPorMes[mesKey].push({ label, valorStr, isPositive });
   }
 
   movs.forEach((m) => {
     const v = Number(m.valor || 0);
     const t = String(m.tipo_mov || '').toUpperCase();
-    const dtCaixa = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
-    const mesKey = dtCaixa.slice(0, 7);
+    const dtIso = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
+    const dtBr = formatDateBR(dtIso);
+    const mesKey = dtIso.slice(0, 7);
     const banco = String(m.account_id || 'Sem Conta').trim() || 'Sem Conta';
+    const desc = normalizeTextDisplay(m.descricao || t);
 
     let delta = 0;
     if (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE') delta = v;
     if (t === 'DESPESA' || t === 'PAGTO_FATURA' || t === 'APORTE') delta = -v;
 
-    if (!dtCaixa || dtCaixa <= todayIso) {
+    if (!dtIso || dtIso <= todayIso) {
       caixaHoje += delta;
       saldosPorBanco[banco] = (saldosPorBanco[banco] || 0) + delta;
     }
@@ -622,16 +1207,16 @@ function renderAll() {
     if (mesKey) {
       if (delta > 0) {
         entradasPorMes[mesKey] = (entradasPorMes[mesKey] || 0) + delta;
-        pushMesItem(mesKey, `${dtCaixa} • ${m.descricao || t}`, `+ ${formatBRL(v)}`);
+        pushMesItem(mesKey, `${dtBr} • ${desc} (${banco})`, `+ ${formatBRL(v)}`, true);
       }
       if (delta < 0) {
         saidasMovPorMes[mesKey] = (saidasMovPorMes[mesKey] || 0) + Math.abs(delta);
-        pushMesItem(mesKey, `${dtCaixa} • ${m.descricao || t}`, `- ${formatBRL(v)}`);
+        pushMesItem(mesKey, `${dtBr} • ${desc} (${banco})`, `- ${formatBRL(v)}`, false);
       }
     }
   });
 
-  // Renderiza saldos atuais por banco
+  // Aba Contas: saldo atual de cada conta separadamente
   const bankGridEl = document.getElementById('bankBalancesGrid');
   if (bankGridEl) {
     const bancos = Object.entries(saldosPorBanco);
@@ -651,12 +1236,14 @@ function renderAll() {
     if (String(p.status_fatura || '').toUpperCase() === 'PAGA') return;
     const comp = String(p.competencia_fatura || '').slice(0, 7);
     const val = Number(p.valor_fatura_banco || 0);
+    const descParcela = normalizeTextDisplay(p.descricao_parcela || 'Parcela');
     if (comp) {
       faturasPorMes[comp] = (faturasPorMes[comp] || 0) + val;
       pushMesItem(
         comp,
-        `Fatura ${p.cartao_id || 'Cartão'} • ${p.descricao_parcela || 'Parcela'}`,
-        `- ${formatBRL(val)}`
+        `Fatura ${p.cartao_id || 'Cartão'} • ${descParcela}`,
+        `- ${formatBRL(val)}`,
+        false
       );
     }
   });
@@ -681,77 +1268,12 @@ function renderAll() {
   document.getElementById('kpiAReceber').textContent = formatBRL(aReceber);
   document.getElementById('kpiPatrimonio').textContent = formatBRL(caixaHoje + invTotal);
 
-  // 1. Movimentações agrupadas por mês
-  const movListEl = document.getElementById('movimentacoesList');
-  const movGroups = groupItemsByMonth(
-    [...movs].reverse(),
-    (m) => String(m.data_caixa || m.data_competencia || '').slice(0, 7),
-    (m) => {
-      const v = Number(m.valor || 0);
-      const t = String(m.tipo_mov || '').toUpperCase();
-      if (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE') return v;
-      if (t === 'DESPESA' || t === 'PAGTO_FATURA' || t === 'APORTE') return -v;
-      return v;
-    }
-  );
-  renderGroupedMonthList(
-    movListEl,
-    movGroups,
-    (m) => {
-      const dt = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
-      return `<div class="month-detail-row"><span><strong>${m.descricao || 'Sem descrição'}</strong> • ${dt} • ${m.tipo_mov || ''} • ${m.account_id || ''}</span><strong>${formatBRL(m.valor)}</strong></div>`;
-    },
-    'Nenhuma movimentação encontrada na base.'
-  );
+  renderMovementsSection(movs, currentMonthYm);
+  renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm);
+  renderThirdPartiesSection(terceiros, currentMonthYm);
+  renderInvestmentsSection(investimentos, cotacoesCache);
 
-  // 2. Cartões agrupados por mês da fatura
-  const cartoesEl = document.getElementById('cartoesList');
-  const cardGroups = groupItemsByMonth(
-    [...parcelas].reverse(),
-    (p) => String(p.competencia_fatura || '').slice(0, 7),
-    (p) => Number(p.valor_fatura_banco || 0)
-  );
-  renderGroupedMonthList(
-    cartoesEl,
-    cardGroups,
-    (p) => {
-      const minha = Number(p.minha_parte_liquida || 0);
-      const terc = Number(p.terceiro_liquido_a_receber || 0);
-      const desc = Number(p.desconto_rateado || 0);
-      const extra = terc > 0
-        ? ` • ${p.pessoa_id || 'Terceiro'}: ${formatBRL(terc)}${desc > 0 ? ` (desc. ${formatBRL(desc)})` : ''}`
-        : '';
-      return `<div class="month-detail-row"><span><strong>${p.descricao_parcela || 'Compra'}</strong> • ${p.cartao_id || ''} • Minha parte: ${formatBRL(minha)}${extra}</span><strong>${formatBRL(p.valor_fatura_banco)}</strong></div>`;
-    },
-    'Nenhuma parcela ou compra no cartão registrada ainda. Use "+ Lançar" e escolha "Compra no Cartão".'
-  );
-
-  // 3. Terceiros agrupados por mês de competência
-  const terceirosEl = document.getElementById('terceirosList');
-  const thirdGroups = groupItemsByMonth(
-    [...terceiros].reverse(),
-    (t) => String(t.competencia || '').slice(0, 7),
-    (t) => Number(t.valor_ajustado_cobrado || 0)
-  );
-  renderGroupedMonthList(
-    terceirosEl,
-    thirdGroups,
-    (t) =>
-      `<div class="month-detail-row"><span><strong>${t.descricao || t.tipo_evento}</strong> • ${t.pessoa_id || ''} • ${t.status || ''}</span><strong>${formatBRL(t.valor_ajustado_cobrado)}</strong></div>`,
-    'Nenhum lançamento de reembolso ou terceiro registrado ainda.'
-  );
-
-  // 4. Investimentos
-  const invEl = document.getElementById('investimentosList');
-  if (invEl) {
-    invEl.innerHTML = investimentos.length
-      ? investimentos.slice(-30).reverse().map((op) =>
-          `<div class="list-item"><span><strong>${op.ticker || op.nome_ativo}</strong><br><small class="muted">${op.tipo_op || ''} • ${op.classe_ativo || ''} • Qtd: ${op.quantidade || 0}</small></span><strong>${formatBRL(op.valor_total)}</strong></div>`
-        ).join('')
-      : '<p class="muted">Nenhuma operação de investimento registrada na base ainda.</p>';
-  }
-
-  // 5. Cronograma mensal até 12/2027
+  // Cronograma mensal até 12/2027 (blocos colapsáveis)
   let saldoAcumulado = caixaHoje;
   const scheduleRows = proj.map((p) => {
     const mes = String(p.competencia || '').slice(0, 7);
@@ -760,7 +1282,7 @@ function renderAll() {
     const faturasMes = Number(faturasPorMes[mes] || 0);
     const aPagar = saidasMov + faturasMes;
 
-    if (mes !== todayIso.slice(0, 7)) {
+    if (mes !== currentMonthYm) {
       saldoAcumulado += entradas - aPagar;
     }
 
@@ -779,36 +1301,50 @@ function renderAll() {
   const projPreviewEl = document.getElementById('homeProjectionPreview');
   const projFullEl = document.getElementById('projecaoFullList');
   if (scheduleRows.length) {
-    const mapBlock = (item, includeDetails) => {
+    const mapCollapsibleBlock = (item, openByDefault) => {
       const balClass = item.saldoFinal >= 0 ? 'month-balance-ok' : 'month-balance-neg';
-      const detailsHtml = includeDetails && item.detalhes.length
-        ? `<div class="month-details">${item.detalhes.map((d) =>
-            `<div class="month-detail-row"><span>${d.label}</span><strong>${d.valorStr}</strong></div>`
-          ).join('')}</div>`
-        : '';
+      const detailsHtml = item.detalhes.length
+        ? `<div class="month-details">${item.detalhes.map((d) => {
+            const amtCls = d.isPositive ? 'amt-pos' : 'amt-neg';
+            return `<div class="month-detail-row"><span>${d.label}</span><strong class="${amtCls}">${d.valorStr}</strong></div>`;
+          }).join('')}</div>`
+        : '<div class="month-details"><span class="muted">Sem lançamentos programados neste mês.</span></div>';
 
       return `
-        <div class="month-block">
-          <div class="month-header">
-            <span class="month-title">${item.tituloMes}</span>
+        <details class="month-block" ${openByDefault ? 'open' : ''}>
+          <summary class="month-header">
+            <span class="month-header-left">
+              <span class="month-chevron">▶</span>
+              <span class="month-title">${item.tituloMes}</span>
+            </span>
             <span class="${balClass}">Saldo: ${formatBRL(item.saldoFinal)}</span>
-          </div>
+          </summary>
           <div class="month-metrics">
-            <div class="month-metric"><span>Entradas</span><strong>${formatBRL(item.entradas)}</strong></div>
-            <div class="month-metric"><span>A pagar (desp./faturas)</span><strong>${formatBRL(item.aPagar)}</strong></div>
+            <div class="month-metric"><span>Entradas</span><strong class="amt-pos">${formatBRL(item.entradas)}</strong></div>
+            <div class="month-metric"><span>A pagar (desp./faturas)</span><strong class="amt-neg">${formatBRL(item.aPagar)}</strong></div>
             <div class="month-metric"><span>Faturas cartão</span><strong>${formatBRL(item.faturasMes)}</strong></div>
           </div>
           ${detailsHtml}
-        </div>
+        </details>
       `;
     };
 
-    projPreviewEl.innerHTML = scheduleRows.slice(0, 4).map((it) => mapBlock(it, false)).join('');
-    projFullEl.innerHTML = scheduleRows.map((it) => mapBlock(it, true)).join('');
+    const visibleHomeRows = state.homeScheduleExpanded ? scheduleRows : scheduleRows.slice(0, 3);
+    projPreviewEl.innerHTML = visibleHomeRows
+      .map((it) => mapCollapsibleBlock(it, it.mes === currentMonthYm))
+      .join('');
+
+    projFullEl.innerHTML = scheduleRows
+      .map((it) => mapCollapsibleBlock(it, it.mes === currentMonthYm))
+      .join('');
   }
 
   renderMonthlyChart(scheduleRows);
 }
+
+/* ==========================================================================
+   6. NAVEGAÇÃO E EVENT LISTENERS
+   ========================================================================== */
 
 function switchTab(tabName) {
   document.querySelectorAll('.nav-tab').forEach((btn) => {
@@ -840,6 +1376,59 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnSync').addEventListener('click', syncFromBackend);
   document.getElementById('configForm').addEventListener('submit', saveConfig);
   document.getElementById('quickAddForm').addEventListener('submit', handleQuickAddSubmit);
+
+  const toggleHomeBtn = document.getElementById('btnToggleHomeSchedule');
+  if (toggleHomeBtn) {
+    toggleHomeBtn.addEventListener('click', () => {
+      state.homeScheduleExpanded = !state.homeScheduleExpanded;
+      toggleHomeBtn.textContent = state.homeScheduleExpanded
+        ? 'Recolher meses futuros'
+        : 'Ver todos os meses';
+      renderAll();
+    });
+  }
+
+  // Filtros de Movimentações
+  const filterMonth = document.getElementById('filterMovMonth');
+  const filterType = document.getElementById('filterMovType');
+  const filterAccount = document.getElementById('filterMovAccount');
+  const filterSearch = document.getElementById('filterMovSearch');
+  const clearFiltersBtn = document.getElementById('btnClearMovFilters');
+
+  if (filterMonth) {
+    filterMonth.addEventListener('change', () => {
+      state.movFilters.month = filterMonth.value;
+      renderAll();
+    });
+  }
+  if (filterType) {
+    filterType.addEventListener('change', () => {
+      state.movFilters.type = filterType.value;
+      renderAll();
+    });
+  }
+  if (filterAccount) {
+    filterAccount.addEventListener('change', () => {
+      state.movFilters.account = filterAccount.value;
+      renderAll();
+    });
+  }
+  if (filterSearch) {
+    filterSearch.addEventListener('input', () => {
+      state.movFilters.search = filterSearch.value.trim();
+      renderAll();
+    });
+  }
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', () => {
+      state.movFilters = { month: 'ALL', type: 'ALL', account: 'ALL', search: '' };
+      if (filterMonth) filterMonth.value = 'ALL';
+      if (filterType) filterType.value = 'ALL';
+      if (filterAccount) filterAccount.value = 'ALL';
+      if (filterSearch) filterSearch.value = '';
+      renderAll();
+    });
+  }
 
   const addPersonForm = document.getElementById('addPersonForm');
   if (addPersonForm) addPersonForm.addEventListener('submit', handleAddPerson);

@@ -31,7 +31,7 @@ body {
   max-width: 1120px;
   margin: 0 auto;
   min-height: 100vh;
-  padding: 16px 16px 40px;
+  padding: 16px 16px 48px;
 }
 
 .topbar {
@@ -55,8 +55,18 @@ body {
   color: var(--text-muted);
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
+}
+
+.sync-badge.ok {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #86efac;
+}
+
+.sync-badge.warn {
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fde68a;
 }
 
 .topbar-actions {
@@ -87,6 +97,7 @@ body {
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 
 .nav-tab.active {
@@ -112,7 +123,7 @@ body {
 
 .bank-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 10px;
 }
 
@@ -127,13 +138,13 @@ body {
 }
 
 .bank-name {
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   color: var(--text-muted);
   font-weight: 600;
 }
 
 .bank-balance {
-  font-size: 1.08rem;
+  font-size: 1.12rem;
   font-weight: 700;
 }
 
@@ -143,6 +154,10 @@ body {
 
 .bank-balance.neg {
   color: var(--danger);
+}
+
+.bank-balance.warn {
+  color: var(--warning);
 }
 
 .kpi-card,
@@ -171,7 +186,7 @@ body {
 
 .card h2 {
   font-size: 1.05rem;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .card-header-inline {
@@ -183,9 +198,13 @@ body {
   margin-bottom: 10px;
 }
 
+.card-header-inline h2 {
+  margin-bottom: 0;
+}
+
 .muted {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .list-stack {
@@ -215,6 +234,11 @@ body {
   cursor: pointer;
 }
 
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
 .btn-primary {
   background: var(--accent);
   color: #06101a;
@@ -231,6 +255,10 @@ body {
   border: 1px solid var(--border);
 }
 
+.btn-ghost:hover {
+  border-color: var(--accent);
+}
+
 .btn-icon {
   background: transparent;
   color: var(--text-muted);
@@ -240,6 +268,86 @@ body {
   padding: 4px 8px;
 }
 
+.btn-delete {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px 7px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.btn-delete:hover {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Badges semânticos */
+.badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+.badge-in {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.badge-out {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.badge-warn {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.badge-info {
+  background: rgba(56, 189, 248, 0.15);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.amt-pos {
+  color: var(--success);
+}
+
+.amt-neg {
+  color: var(--danger);
+}
+
+/* Barra de filtros */
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.filter-bar select,
+.filter-bar input {
+  width: 100%;
+  background: var(--bg-surface-2);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
+/* Modal */
 .modal {
   position: fixed;
   inset: 0;
@@ -339,10 +447,22 @@ body {
   background: var(--bg-surface-2);
   border: 1px solid var(--border);
   color: var(--text-main);
-  padding: 5px 10px;
+  padding: 6px 12px;
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+}
+
+.chip.active {
+  background: var(--accent);
+  color: #06101a;
+  border-color: var(--accent);
 }
 
 .chart-wrap {
@@ -381,39 +501,78 @@ body {
   display: inline-block;
 }
 
+/* Blocos mensais colapsáveis (<details>) */
+details.month-block,
 .month-block {
   background: var(--bg-surface-2);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
+summary.month-header,
 .month-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 11px 14px;
   background: rgba(56, 189, 248, 0.1);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+summary.month-header::-webkit-details-marker {
+  display: none;
+}
+
+details.month-block[open] > summary.month-header {
   border-bottom: 1px solid var(--border);
 }
 
+.month-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.month-chevron {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+}
+
+details.month-block[open] .month-chevron {
+  transform: rotate(90deg);
+}
+
 .month-title {
-  font-size: 0.98rem;
+  font-size: 0.96rem;
   font-weight: 700;
   color: var(--accent);
   letter-spacing: 0.02em;
 }
 
+.month-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
 .month-balance-ok {
-  font-size: 0.95rem;
+  font-size: 0.94rem;
   font-weight: 700;
   color: var(--success);
 }
 
 .month-balance-neg {
-  font-size: 0.95rem;
+  font-size: 0.94rem;
   font-weight: 700;
   color: var(--danger);
 }
@@ -432,25 +591,143 @@ body {
   font-size: 0.75rem;
 }
 
+.card-subgroup {
+  margin: 10px 14px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+}
+
+.card-subgroup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.card-split-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
 .month-details {
-  padding: 0 14px 12px;
+  padding: 10px 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  border-top: 1px dashed var(--border);
-  padding-top: 8px;
+  gap: 8px;
 }
 
 .month-detail-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.8rem;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.84rem;
+  color: var(--text-main);
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.month-detail-meta {
+  display: block;
+  font-size: 0.76rem;
   color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.month-detail-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.month-summary-box {
+  padding: 10px 14px 14px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.summary-pill {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.summary-pill span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.summary-pill strong {
+  font-size: 0.98rem;
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+  max-width: 340px;
+}
+
+.toast {
+  background: var(--bg-surface-2);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+  animation: fadeInToast 0.18s ease-out;
+}
+
+.toast.success {
+  border-left-color: var(--success);
+}
+
+.toast.error {
+  border-left-color: var(--danger);
+}
+
+.toast.warn {
+  border-left-color: var(--warning);
+}
+
+@keyframes fadeInToast {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 520px) {
   .form-row,
-  .month-metrics {
+  .month-metrics,
+  .month-summary-box {
     grid-template-columns: 1fr;
   }
 }
