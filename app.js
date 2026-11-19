@@ -6,6 +6,21 @@ const STORAGE_KEYS = {
 
 const DEFAULT_PEOPLE = ['MAE', 'ERIC', 'ANDERSON'];
 
+const MONTH_NAMES = {
+  '01': 'JANEIRO',
+  '02': 'FEVEREIRO',
+  '03': 'MARÇO',
+  '04': 'ABRIL',
+  '05': 'MAIO',
+  '06': 'JUNHO',
+  '07': 'JULHO',
+  '08': 'AGOSTO',
+  '09': 'SETEMBRO',
+  '10': 'OUTUBRO',
+  '11': 'NOVEMBRO',
+  '12': 'DEZEMBRO'
+};
+
 const state = {
   config: { apiUrl: '', apiKey: '' },
   snapshot: null,
@@ -15,6 +30,13 @@ const state = {
 function formatBRL(value) {
   const num = Number(value || 0);
   return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatMonthLabel(ym) {
+  const parts = String(ym || '').split('-');
+  if (parts.length !== 2) return ym || 'Mês';
+  const nome = MONTH_NAMES[parts[1]] || parts[1];
+  return `${nome} / ${parts[0]}`;
 }
 
 function normalizePersonName(name) {
@@ -509,6 +531,13 @@ function renderAll() {
 
   const entradasPorMes = {};
   const saidasMovPorMes = {};
+  const itensPorMes = {};
+
+  function pushMesItem(mesKey, label, valorStr) {
+    if (!mesKey) return;
+    if (!itensPorMes[mesKey]) itensPorMes[mesKey] = [];
+    itensPorMes[mesKey].push({ label, valorStr });
+  }
 
   movs.forEach((m) => {
     const v = Number(m.valor || 0);
@@ -525,8 +554,14 @@ function renderAll() {
     }
 
     if (mesKey) {
-      if (delta > 0) entradasPorMes[mesKey] = (entradasPorMes[mesKey] || 0) + delta;
-      if (delta < 0) saidasMovPorMes[mesKey] = (saidasMovPorMes[mesKey] || 0) + Math.abs(delta);
+      if (delta > 0) {
+        entradasPorMes[mesKey] = (entradasPorMes[mesKey] || 0) + delta;
+        pushMesItem(mesKey, `${dtCaixa} • ${m.descricao || t}`, `+ ${formatBRL(v)}`);
+      }
+      if (delta < 0) {
+        saidasMovPorMes[mesKey] = (saidasMovPorMes[mesKey] || 0) + Math.abs(delta);
+        pushMesItem(mesKey, `${dtCaixa} • ${m.descricao || t}`, `- ${formatBRL(v)}`);
+      }
     }
   });
 
@@ -537,6 +572,11 @@ function renderAll() {
     const val = Number(p.valor_fatura_banco || 0);
     if (comp) {
       faturasPorMes[comp] = (faturasPorMes[comp] || 0) + val;
+      pushMesItem(
+        comp,
+        `Fatura ${p.cartao_id || 'Cartão'} • ${p.descricao_parcela || 'Parcela'}`,
+        `- ${formatBRL(val)}`
+      );
     }
   });
 
@@ -603,7 +643,6 @@ function renderAll() {
       : '<p class="muted">Nenhuma operação de investimento registrada na base ainda.</p>';
   }
 
-  // Monta cronograma mês a mês: entradas, a pagar (despesas + faturas abertas) e saldo final na conta
   let saldoAcumulado = caixaHoje;
   const scheduleRows = proj.map((p) => {
     const mes = String(p.competencia || '').slice(0, 7);
@@ -612,29 +651,51 @@ function renderAll() {
     const faturasMes = Number(faturasPorMes[mes] || 0);
     const aPagar = saidasMov + faturasMes;
 
-    // Evita dupla contagem se o mês já está refletido em caixaHoje (ex.: 2026-11)
     if (mes !== todayIso.slice(0, 7)) {
       saldoAcumulado += entradas - aPagar;
     }
 
     return {
       mes,
+      tituloMes: formatMonthLabel(mes),
       entradas,
       faturasMes,
       aPagar,
       reembolsosPrevistos: Number(p.reembolsos_a_receber || 0),
-      saldoFinal: saldoAcumulado
+      saldoFinal: saldoAcumulado,
+      detalhes: itensPorMes[mes] || []
     };
   });
 
   const projPreviewEl = document.getElementById('homeProjectionPreview');
   const projFullEl = document.getElementById('projecaoFullList');
   if (scheduleRows.length) {
-    const mapRow = (item) =>
-      `<div class="list-item"><span><strong>${item.mes}</strong><br><small class="muted">Entradas: ${formatBRL(item.entradas)} • A pagar (desp./faturas): ${formatBRL(item.aPagar)}</small></span><strong>Saldo na conta: ${formatBRL(item.saldoFinal)}</strong></div>`;
+    const mapBlock = (item, includeDetails) => {
+      const balClass = item.saldoFinal >= 0 ? 'month-balance-ok' : 'month-balance-neg';
+      const detailsHtml = includeDetails && item.detalhes.length
+        ? `<div class="month-details">${item.detalhes.map((d) =>
+            `<div class="month-detail-row"><span>${d.label}</span><strong>${d.valorStr}</strong></div>`
+          ).join('')}</div>`
+        : '';
 
-    projPreviewEl.innerHTML = scheduleRows.slice(0, 4).map(mapRow).join('');
-    projFullEl.innerHTML = scheduleRows.map(mapRow).join('');
+      return `
+        <div class="month-block">
+          <div class="month-header">
+            <span class="month-title">${item.tituloMes}</span>
+            <span class="${balClass}">Saldo: ${formatBRL(item.saldoFinal)}</span>
+          </div>
+          <div class="month-metrics">
+            <div class="month-metric"><span>Entradas</span><strong>${formatBRL(item.entradas)}</strong></div>
+            <div class="month-metric"><span>A pagar (desp./faturas)</span><strong>${formatBRL(item.aPagar)}</strong></div>
+            <div class="month-metric"><span>Faturas cartão</span><strong>${formatBRL(item.faturasMes)}</strong></div>
+          </div>
+          ${detailsHtml}
+        </div>
+      `;
+    };
+
+    projPreviewEl.innerHTML = scheduleRows.slice(0, 4).map((it) => mapBlock(it, false)).join('');
+    projFullEl.innerHTML = scheduleRows.map((it) => mapBlock(it, true)).join('');
   }
 
   renderMonthlyChart(scheduleRows);
