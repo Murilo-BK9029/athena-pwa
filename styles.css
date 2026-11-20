@@ -382,6 +382,23 @@ body {
   padding: 4px 8px;
 }
 
+.btn-edit {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px 7px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.btn-edit:hover {
+  color: var(--accent);
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.1);
+}
+
 .btn-delete {
   background: transparent;
   color: var(--text-muted);
@@ -473,7 +490,7 @@ body[data-theme="dark"] .badge-info {
 /* Barra de filtros */
 .filter-bar {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -619,6 +636,28 @@ body[data-theme="dark"] .badge-info {
   background: var(--accent);
   color: var(--accent-text);
   border-color: var(--accent);
+}
+
+.chip-with-del {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip-del-x {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.chip-del-x:hover {
+  opacity: 1;
+  color: var(--danger);
 }
 
 .chart-wrap {

@@ -2,6 +2,7 @@ const STORAGE_KEYS = {
   CONFIG: 'athena_cfg_v1',
   CACHE: 'athena_cache_v1',
   PEOPLE: 'athena_people_v1',
+  HIDDEN_PEOPLE: 'athena_hidden_people_v1',
   RECONCILED: 'athena_reconciled_months_v1',
   THEME: 'athena_theme_v1',
   CARDS_CONFIG: 'athena_cards_config_v1'
@@ -11,9 +12,9 @@ const DEFAULT_PEOPLE = ['MAE', 'ERIC', 'ANDERSON'];
 const ALLOWED_THEMES = ['blue-dark', 'white-white', 'dark', 'blue-white'];
 
 const DEFAULT_CARD_RULE = {
-  closingMode: 'DAY', // 'DAY' | 'LAST'
+  closingMode: 'DAY',
   closingDay: 25,
-  dueMode: 'DAYS_AFTER', // 'DAYS_AFTER' | 'DAY'
+  dueMode: 'DAYS_AFTER',
   dueDays: 6,
   dueDay: 6
 };
@@ -111,11 +112,13 @@ const state = {
   config: { apiUrl: '', apiKey: '' },
   snapshot: null,
   people: [...DEFAULT_PEOPLE],
+  hiddenPeople: [],
   reconciledMonths: {},
   theme: 'blue-dark',
   cardsConfig: JSON.parse(JSON.stringify(DEFAULT_CARDS_CONFIG)),
   selectedPersonFilter: 'ALL',
   movFilters: {
+    period: 'ALL',
     month: 'ALL',
     type: 'ALL',
     account: 'ALL',
@@ -508,9 +511,13 @@ function loadSavedState() {
     const rawPeople = localStorage.getItem(STORAGE_KEYS.PEOPLE);
     if (rawPeople) {
       const parsedPeople = JSON.parse(rawPeople);
-      if (Array.isArray(parsedPeople) && parsedPeople.length) {
+      if (Array.isArray(parsedPeople)) {
         state.people = parsedPeople;
       }
+    }
+    const rawHiddenPeople = localStorage.getItem(STORAGE_KEYS.HIDDEN_PEOPLE);
+    if (rawHiddenPeople) {
+      state.hiddenPeople = JSON.parse(rawHiddenPeople) || [];
     }
     const rawRecon = localStorage.getItem(STORAGE_KEYS.RECONCILED);
     if (rawRecon) {
@@ -646,26 +653,50 @@ async function postToBackend(action, payload) {
 }
 
 /* ==========================================================================
-   3. CADASTRO DE PESSOAS E REGRAS DO MODAL (+ LANÇAR)
+   3. CADASTRO/EXCLUSÃO DE PESSOAS E REGRAS DO MODAL (+ LANÇAR)
    ========================================================================== */
 
 function syncPeopleListFromData() {
-  const set = new Set(DEFAULT_PEOPLE);
+  const hiddenSet = new Set(state.hiddenPeople || []);
+  const set = new Set();
+
   if (Array.isArray(state.people)) {
     state.people.forEach((p) => {
       const n = normalizePersonName(p);
-      if (n && n !== 'EU') set.add(n);
+      if (n && n !== 'EU' && !hiddenSet.has(n)) set.add(n);
     });
   }
+
   const terceiros = (state.snapshot && Array.isArray(state.snapshot.terceiros_razao))
     ? state.snapshot.terceiros_razao
     : [];
   terceiros.forEach((t) => {
     const n = normalizePersonName(t.pessoa_id);
-    if (n && n !== 'EU') set.add(n);
+    if (n && n !== 'EU' && !hiddenSet.has(n)) set.add(n);
   });
+
   state.people = Array.from(set);
   localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
+}
+
+function handleRemovePerson(personName) {
+  const clean = normalizePersonName(personName);
+  const ok = confirm(`Remover "${clean}" da lista de pessoas?`);
+  if (!ok) return;
+
+  state.people = state.people.filter((p) => p !== clean);
+  if (!state.hiddenPeople.includes(clean)) {
+    state.hiddenPeople.push(clean);
+  }
+  localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
+  localStorage.setItem(STORAGE_KEYS.HIDDEN_PEOPLE, JSON.stringify(state.hiddenPeople));
+
+  if (state.selectedPersonFilter === clean) {
+    state.selectedPersonFilter = 'ALL';
+  }
+  renderPeopleControls();
+  renderAll();
+  showToast(`Pessoa "${clean}" removida.`, 'info');
 }
 
 function renderPeopleControls() {
@@ -675,15 +706,28 @@ function renderPeopleControls() {
   if (chipsEl) {
     const allChip = `<button type="button" class="chip ${state.selectedPersonFilter === 'ALL' ? 'active' : ''}" data-person="ALL">Todos</button>`;
     const personChips = state.people
-      .map((p) => `<button type="button" class="chip ${state.selectedPersonFilter === p ? 'active' : ''}" data-person="${p}">${p}</button>`)
+      .map((p) => `
+        <span class="chip chip-with-del ${state.selectedPersonFilter === p ? 'active' : ''}" data-person="${p}">
+          <span>${p}</span>
+          <button type="button" class="chip-del-x" data-del-person="${p}" title="Remover pessoa">✕</button>
+        </span>
+      `)
       .join('');
     chipsEl.innerHTML = allChip + personChips;
 
-    chipsEl.querySelectorAll('.chip').forEach((chip) => {
-      chip.addEventListener('click', () => {
+    chipsEl.querySelectorAll('[data-person]').forEach((chip) => {
+      chip.addEventListener('click', (e) => {
+        if (e.target.closest('[data-del-person]')) return;
         state.selectedPersonFilter = chip.dataset.person;
         renderPeopleControls();
         renderAll();
+      });
+    });
+
+    chipsEl.querySelectorAll('[data-del-person]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleRemovePerson(btn.dataset.delPerson);
       });
     });
   }
@@ -723,13 +767,17 @@ function handleAddPerson(event) {
   const clean = normalizePersonName(input.value);
   if (!clean) return;
 
+  state.hiddenPeople = state.hiddenPeople.filter((p) => p !== clean);
+  localStorage.setItem(STORAGE_KEYS.HIDDEN_PEOPLE, JSON.stringify(state.hiddenPeople));
+
   if (!state.people.includes(clean)) {
     state.people.push(clean);
     localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
   }
   input.value = '';
   renderPeopleControls();
-  showToast(`Pessoa "${clean}" padronizada e adicionada.`, 'success');
+  renderAll();
+  showToast(`Pessoa "${clean}" adicionada.`, 'success');
 }
 
 function evaluateSplitWarning() {
@@ -828,7 +876,7 @@ function resolveSelectedPerson() {
 }
 
 /* ==========================================================================
-   4. ESCRITA (INCLUINDO RECORRÊNCIAS) E EXCLUSÃO NO BACKEND
+   4. ESCRITA, EDIÇÃO E EXCLUSÃO EM TODOS OS MÓDULOS
    ========================================================================== */
 
 async function handleQuickAddSubmit(event) {
@@ -979,21 +1027,146 @@ async function handleQuickAddSubmit(event) {
 }
 
 async function handleDeleteMovement(txId, label) {
-  if (!txId) {
-    showToast('Não foi possível identificar o ID deste lançamento.', 'error');
-    return;
-  }
-  const ok = confirm(`Deseja realmente excluir o lançamento "${label}"?`);
-  if (!ok) return;
-
+  if (!txId) return;
+  if (!confirm(`Excluir a movimentação "${label}"?`)) return;
   try {
-    updateSyncBadge('Excluindo lançamento...', 'warn');
     await postToBackend('deleteTransaction', { tx_id: txId });
-    showToast('Lançamento excluído com sucesso.', 'success');
+    showToast('Movimentação excluída.', 'success');
     await syncFromBackend();
   } catch (err) {
-    updateSyncBadge('Erro ao excluir', 'warn');
-    showToast(`Falha ao excluir: ${err.message}`, 'error');
+    showToast(`Erro ao excluir: ${err.message}`, 'error');
+  }
+}
+
+async function handleDeleteCardPurchase(compraId, label) {
+  if (!compraId) return;
+  if (!confirm(`Excluir a compra no cartão "${label}" e todas as suas parcelas/rateios?`)) return;
+  try {
+    await postToBackend('deleteCardPurchase', { compra_id: compraId });
+    showToast('Compra no cartão excluída.', 'success');
+    await syncFromBackend();
+  } catch (err) {
+    showToast(`Erro ao excluir compra no cartão: ${err.message}`, 'error');
+  }
+}
+
+async function handleDeleteThirdParty(razaoId, label) {
+  if (!razaoId) return;
+  if (!confirm(`Excluir o lançamento de terceiro "${label}"?`)) return;
+  try {
+    await postToBackend('deleteThirdPartyEntry', { razao_id: razaoId });
+    showToast('Lançamento de terceiro excluído.', 'success');
+    await syncFromBackend();
+  } catch (err) {
+    showToast(`Erro ao excluir terceiro: ${err.message}`, 'error');
+  }
+}
+
+async function handleDeleteInvestmentOp(opInvId, label) {
+  if (!opInvId) return;
+  if (!confirm(`Excluir esta operação de investimento (${label})?`)) return;
+  try {
+    await postToBackend('deleteInvestmentOp', { op_inv_id: opInvId });
+    showToast('Operação de investimento excluída.', 'success');
+    await syncFromBackend();
+  } catch (err) {
+    showToast(`Erro ao excluir operação: ${err.message}`, 'error');
+  }
+}
+
+async function handleDeleteInvestmentAsset(ticker) {
+  if (!ticker) return;
+  if (!confirm(`Excluir TODAS as operações do ativo "${ticker}"?`)) return;
+  try {
+    await postToBackend('deleteInvestmentOp', { ticker });
+    showToast(`Ativo ${ticker} removido da carteira.`, 'success');
+    await syncFromBackend();
+  } catch (err) {
+    showToast(`Erro ao excluir ativo: ${err.message}`, 'error');
+  }
+}
+
+function openEditModal(config) {
+  document.getElementById('editModalTitle').textContent = config.title || 'Editar Lançamento';
+  document.getElementById('editKind').value = config.kind;
+  document.getElementById('editId').value = config.id;
+  document.getElementById('editDesc').value = config.desc || '';
+  document.getElementById('editDate').value = config.date || '';
+  document.getElementById('editValor').value = config.valor || '';
+  document.getElementById('editAccountOrPerson').value = config.accountOrPerson || '';
+  document.getElementById('editQty').value = config.qty || '';
+  document.getElementById('editStatus').value = config.status || 'PENDENTE';
+
+  document.getElementById('editDateWrap').classList.toggle('hidden', !config.showDate);
+  document.getElementById('editValWrap').classList.toggle('hidden', !config.showVal);
+  document.getElementById('editAccountWrap').classList.toggle('hidden', !config.showAccountOrPerson);
+  document.getElementById('editQtyWrap').classList.toggle('hidden', !config.showQty);
+  document.getElementById('editStatusWrap').classList.toggle('hidden', !config.showStatus);
+
+  document.getElementById('editEntryModal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+  document.getElementById('editEntryModal').classList.add('hidden');
+}
+
+async function handleSaveEditSubmit(event) {
+  event.preventDefault();
+  const btn = document.getElementById('btnSaveEdit');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    const kind = document.getElementById('editKind').value;
+    const id = document.getElementById('editId').value;
+    const desc = canonicalizeText(document.getElementById('editDesc').value);
+    const dt = document.getElementById('editDate').value;
+    const val = Number(document.getElementById('editValor').value || 0);
+    const accOrPerson = document.getElementById('editAccountOrPerson').value.trim();
+    const qty = Number(document.getElementById('editQty').value || 0);
+    const status = document.getElementById('editStatus').value;
+
+    if (kind === 'MOVEMENT') {
+      await postToBackend('updateTransaction', {
+        tx_id: id,
+        descricao: desc,
+        data_competencia: dt,
+        data_caixa: dt,
+        valor: val,
+        account_id: canonicalizeAccount(accOrPerson)
+      });
+    } else if (kind === 'CARD_PURCHASE') {
+      await postToBackend('updateCardPurchase', {
+        compra_id: id,
+        descricao: desc,
+        cartao_id: canonicalizeAccount(accOrPerson)
+      });
+    } else if (kind === 'THIRD_PARTY') {
+      await postToBackend('updateThirdPartyEntry', {
+        razao_id: id,
+        descricao: desc,
+        pessoa_id: normalizePersonName(accOrPerson),
+        valor: val,
+        status
+      });
+    } else if (kind === 'INVESTMENT') {
+      await postToBackend('updateInvestmentOp', {
+        op_inv_id: id,
+        ticker: normalizeTicker(desc),
+        data_op: dt,
+        quantidade: qty,
+        valor_total: val
+      });
+    }
+
+    closeEditModal();
+    showToast('Alterações salvas com sucesso!', 'success');
+    await syncFromBackend();
+  } catch (err) {
+    showToast(`Erro ao editar: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Salvar Alterações';
   }
 }
 
@@ -1165,11 +1338,12 @@ function renderPortfolioChart(positions) {
   `;
 }
 
-function renderExecutiveHome(currentRow, faturasAbertas, parcelas, terceiros, currentMonthYm) {
+function renderExecutiveHome(currentRow, movs, faturasAbertas, parcelas, terceiros, currentMonthYm) {
   const actionsEl = document.getElementById('homeCurrentMonthActions');
   const summaryEl = document.getElementById('homeCurrentMonthSummary');
+  const recentEl = document.getElementById('homeRecentEntriesList');
   const alertsEl = document.getElementById('homeUpcomingAlerts');
-  if (!actionsEl || !summaryEl || !alertsEl) return;
+  if (!actionsEl || !summaryEl || !alertsEl || !recentEl) return;
 
   actionsEl.innerHTML = renderReconcileButton(currentMonthYm);
 
@@ -1191,6 +1365,35 @@ function renderExecutiveHome(currentRow, faturasAbertas, parcelas, terceiros, cu
   } else {
     summaryEl.innerHTML = '<p class="muted">Sincronize para visualizar o resumo executivo do mês atual.</p>';
   }
+
+  const recentMovs = [...movs].slice(-5).reverse();
+  recentEl.innerHTML = recentMovs.length
+    ? recentMovs.map((m) => {
+        const dtIso = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
+        const dtBr = formatDateBR(dtIso);
+        const desc = canonicalizeText(m.descricao || 'Sem descrição');
+        const acc = canonicalizeAccount(m.account_id);
+        const t = String(m.tipo_mov || '').toUpperCase();
+        const isPositive = (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE');
+        const sign = isPositive ? '+' : '-';
+        const amtClass = isPositive ? 'amt-pos' : 'amt-neg';
+        const badge = getMovementBadge(t);
+
+        return `
+          <div class="month-detail-row">
+            <div>
+              <strong>${desc}</strong> ${badge}
+              <span class="month-detail-meta">${dtBr} • ${acc}</span>
+            </div>
+            <div class="month-detail-right">
+              <strong class="${amtClass}">${sign} ${formatBRL(m.valor)}</strong>
+              <button type="button" class="btn-edit" data-edit-mov="${m.tx_id || ''}" title="Editar">✏️</button>
+              <button type="button" class="btn-delete" data-del-mov="${m.tx_id || ''}" data-del-label="${desc}" title="Excluir">🗑️</button>
+            </div>
+          </div>
+        `;
+      }).join('')
+    : '<p class="muted">Nenhum lançamento recente encontrado.</p>';
 
   const alerts = [];
   if (faturasAbertas > 0) {
@@ -1239,7 +1442,7 @@ function renderExecutiveHome(currentRow, faturasAbertas, parcelas, terceiros, cu
     : '<p class="muted">Nenhuma pendência crítica ou vencimento em aberto.</p>';
 }
 
-function renderMovementsSection(movs, currentMonthYm) {
+function renderMovementsSection(movs, todayIso, currentMonthYm) {
   const movListEl = document.getElementById('movimentacoesList');
   if (!movListEl) return;
 
@@ -1275,12 +1478,15 @@ function renderMovementsSection(movs, currentMonthYm) {
   }
 
   const filtered = movs.filter((m) => {
-    const ym = String(m.data_caixa || m.data_competencia || '').slice(0, 7);
+    const dtIso = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
+    const ym = dtIso.slice(0, 7);
     const tipo = String(m.tipo_mov || '').toUpperCase();
     const acc = canonicalizeAccount(m.account_id);
     const descNorm = canonicalizeText(m.descricao || '').toLowerCase();
     const catNorm = canonicalizeCategory(m.categoria_id || '').toLowerCase();
 
+    if (state.movFilters.period === 'PAST' && dtIso > todayIso) return false;
+    if (state.movFilters.period === 'FUTURE' && dtIso <= todayIso) return false;
     if (state.movFilters.month !== 'ALL' && ym !== state.movFilters.month) return false;
     if (state.movFilters.type !== 'ALL' && tipo !== state.movFilters.type) return false;
     if (state.movFilters.account !== 'ALL' && acc !== state.movFilters.account) return false;
@@ -1321,7 +1527,7 @@ function renderMovementsSection(movs, currentMonthYm) {
   movListEl.innerHTML = groups.map((g, idx) => {
     const title = g.key === '0000-00' ? 'SEM DATA' : formatMonthLabel(g.key);
     const totalClass = g.netTotal < 0 ? 'month-balance-neg' : 'month-balance-ok';
-    const isOpen = state.movFilters.month !== 'ALL' || g.key === currentMonthYm || idx === 0;
+    const isOpen = state.movFilters.month !== 'ALL' || state.movFilters.period !== 'ALL' || g.key === currentMonthYm || idx === 0;
     const reconBtn = renderReconcileButton(g.key);
 
     const rowsHtml = g.items.map((m) => {
@@ -1343,7 +1549,8 @@ function renderMovementsSection(movs, currentMonthYm) {
           </div>
           <div class="month-detail-right">
             <strong class="${amtClass}">${sign} ${formatBRL(m.valor)}</strong>
-            <button type="button" class="btn-delete" data-tx-id="${m.tx_id || ''}" data-tx-label="${desc}" title="Excluir lançamento">🗑️</button>
+            <button type="button" class="btn-edit" data-edit-mov="${m.tx_id || ''}" title="Editar movimentação">✏️</button>
+            <button type="button" class="btn-delete" data-del-mov="${m.tx_id || ''}" data-del-label="${desc}" title="Excluir movimentação">🗑️</button>
           </div>
         </div>
       `;
@@ -1368,13 +1575,6 @@ function renderMovementsSection(movs, currentMonthYm) {
       </details>
     `;
   }).join('');
-
-  movListEl.querySelectorAll('.btn-delete').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleDeleteMovement(btn.dataset.txId, btn.dataset.txLabel);
-    });
-  });
 }
 
 function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
@@ -1475,7 +1675,6 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
         const pessoa = normalizePersonName(item.pessoa_id || '');
         const tercTxt = terc > 0 ? ` • ${pessoa || 'TERCEIRO'}: ${formatBRL(terc)}` : '';
         const descTxt = desc > 0 ? ` • Desc.: ${formatBRL(desc)}` : '';
-
         const saldoRestanteCompra = item.compra_id && totP > 1
           ? ` • Saldo restante: ${formatBRL(remainingByPurchase[item.compra_id] || 0)}`
           : '';
@@ -1486,7 +1685,11 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
               <strong>${descParcela}</strong> <span class="badge badge-info">${numP}/${totP}</span>
               <span class="month-detail-meta">Minha parte: ${minha}${tercTxt}${descTxt}${saldoRestanteCompra}</span>
             </div>
-            <strong>${formatBRL(item.valor_fatura_banco)}</strong>
+            <div class="month-detail-right">
+              <strong>${formatBRL(item.valor_fatura_banco)}</strong>
+              <button type="button" class="btn-edit" data-edit-card-purchase="${item.compra_id || ''}" data-card-desc="${descParcela}" data-card-name="${c.cardName}" title="Editar compra">✏️</button>
+              <button type="button" class="btn-delete" data-del-card-purchase="${item.compra_id || ''}" data-del-label="${descParcela}" title="Excluir compra no cartão">🗑️</button>
+            </div>
           </div>
         `;
       }).join('');
@@ -1623,7 +1826,11 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
             <strong>${desc}</strong> ${statusBadge}
             <span class="month-detail-meta">Pessoa: ${person} • Competência: ${formatMonthShort(t.competencia)}</span>
           </div>
-          <strong>${formatBRL(t.valor_ajustado_cobrado)}</strong>
+          <div class="month-detail-right">
+            <strong>${formatBRL(t.valor_ajustado_cobrado)}</strong>
+            <button type="button" class="btn-edit" data-edit-third="${t.razao_id || ''}" title="Editar">✏️</button>
+            <button type="button" class="btn-delete" data-del-third="${t.razao_id || ''}" data-del-label="${desc}" title="Excluir">🗑️</button>
+          </div>
         </div>
       `;
     }).join('');
@@ -1741,9 +1948,12 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
           <strong>${p.ticker}</strong> <span class="badge badge-info">${p.classe}</span>
           <span class="month-detail-meta">Qtd: ${p.qtdLiquida} • PM: ${formatBRL(p.pm)} • Cotação: ${cotLabel} • Custo: ${formatBRL(p.custoTotal)}</span>
         </div>
-        <div style="text-align: right;">
-          <strong>${formatBRL(p.valorAtual)}</strong>
-          <span class="month-detail-meta ${diffCls}">${diffSign}${formatBRL(diff)}</span>
+        <div class="month-detail-right">
+          <div style="text-align: right;">
+            <strong>${formatBRL(p.valorAtual)}</strong>
+            <span class="month-detail-meta ${diffCls}">${diffSign}${formatBRL(diff)}</span>
+          </div>
+          <button type="button" class="btn-delete" data-del-asset="${p.ticker}" title="Excluir ativo inteiro">🗑️</button>
         </div>
       </div>
     `;
@@ -1769,10 +1979,135 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
           <strong>${ticker}</strong> ${badge}
           <span class="month-detail-meta">${dtBr} • Qtd: ${qtd} • Preço unit.: ${formatBRL(precoUnit)}</span>
         </div>
-        <strong>${formatBRL(val)}</strong>
+        <div class="month-detail-right">
+          <strong>${formatBRL(val)}</strong>
+          <button type="button" class="btn-edit" data-edit-inv="${op.op_inv_id || ''}" title="Editar ordem">✏️</button>
+          <button type="button" class="btn-delete" data-del-inv="${op.op_inv_id || ''}" data-del-label="${ticker}" title="Excluir ordem">🗑️</button>
+        </div>
       </div>
     `;
   }).join('');
+}
+
+function bindDynamicEditDeleteButtons(movs, parcelas, terceiros, investimentos) {
+  document.querySelectorAll('[data-del-mov]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteMovement(btn.dataset.delMov, btn.dataset.delLabel);
+    });
+  });
+
+  document.querySelectorAll('[data-edit-mov]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const m = movs.find((x) => String(x.tx_id) === String(btn.dataset.editMov));
+      if (!m) return;
+      openEditModal({
+        title: 'Editar Movimentação',
+        kind: 'MOVEMENT',
+        id: m.tx_id,
+        desc: m.descricao,
+        date: String(m.data_caixa || m.data_competencia || '').slice(0, 10),
+        valor: m.valor,
+        accountOrPerson: canonicalizeAccount(m.account_id),
+        showDate: true,
+        showVal: true,
+        showAccountOrPerson: true,
+        showQty: false,
+        showStatus: false
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-del-card-purchase]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteCardPurchase(btn.dataset.delCardPurchase, btn.dataset.delLabel);
+    });
+  });
+
+  document.querySelectorAll('[data-edit-card-purchase]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEditModal({
+        title: 'Editar Compra no Cartão',
+        kind: 'CARD_PURCHASE',
+        id: btn.dataset.editCardPurchase,
+        desc: btn.dataset.cardDesc.replace(/\s*\(\d+\/\d+\)$/, ''),
+        accountOrPerson: btn.dataset.cardName,
+        showDate: false,
+        showVal: false,
+        showAccountOrPerson: true,
+        showQty: false,
+        showStatus: false
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-del-third]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteThirdParty(btn.dataset.delThird, btn.dataset.delLabel);
+    });
+  });
+
+  document.querySelectorAll('[data-edit-third]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const t = terceiros.find((x) => String(x.razao_id) === String(btn.dataset.editThird));
+      if (!t) return;
+      openEditModal({
+        title: 'Editar Lançamento de Terceiro',
+        kind: 'THIRD_PARTY',
+        id: t.razao_id,
+        desc: t.descricao,
+        valor: t.valor_ajustado_cobrado,
+        accountOrPerson: normalizePersonName(t.pessoa_id),
+        status: t.status || 'PENDENTE',
+        showDate: false,
+        showVal: true,
+        showAccountOrPerson: true,
+        showQty: false,
+        showStatus: true
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-del-asset]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteInvestmentAsset(btn.dataset.delAsset);
+    });
+  });
+
+  document.querySelectorAll('[data-del-inv]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteInvestmentOp(btn.dataset.delInv, btn.dataset.delLabel);
+    });
+  });
+
+  document.querySelectorAll('[data-edit-inv]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const op = investimentos.find((x) => String(x.op_inv_id) === String(btn.dataset.editInv));
+      if (!op) return;
+      openEditModal({
+        title: 'Editar Operação de Investimento',
+        kind: 'INVESTMENT',
+        id: op.op_inv_id,
+        desc: op.ticker || op.nome_ativo,
+        date: String(op.data_op || op.data_operacao || '').slice(0, 10),
+        valor: op.valor_total,
+        qty: op.quantidade,
+        showDate: true,
+        showVal: true,
+        showAccountOrPerson: false,
+        showQty: true,
+        showStatus: false
+      });
+    });
+  });
 }
 
 function renderAll() {
@@ -1831,7 +2166,7 @@ function renderAll() {
     }
   });
 
-  // Aba Contas: saldo atual de cada conta separadamente
+  // Aba Contas
   const bankGridEl = document.getElementById('bankBalancesGrid');
   if (bankGridEl) {
     const bancos = Object.entries(saldosPorBanco);
@@ -1884,7 +2219,7 @@ function renderAll() {
   document.getElementById('kpiAReceber').textContent = formatBRL(aReceber);
   document.getElementById('kpiPatrimonio').textContent = formatBRL(caixaHoje + invTotal);
 
-  renderMovementsSection(movs, currentMonthYm);
+  renderMovementsSection(movs, todayIso, currentMonthYm);
   renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm);
   renderThirdPartiesSection(terceiros, currentMonthYm);
   renderInvestmentsSection(investimentos, cotacoesCache);
@@ -1914,7 +2249,7 @@ function renderAll() {
   });
 
   const currentRow = scheduleRows.find((r) => r.mes === currentMonthYm) || scheduleRows[0] || null;
-  renderExecutiveHome(currentRow, faturasAbertas, parcelas, terceiros, currentMonthYm);
+  renderExecutiveHome(currentRow, movs, faturasAbertas, parcelas, terceiros, currentMonthYm);
 
   const projFullEl = document.getElementById('projecaoFullList');
   if (projFullEl && scheduleRows.length) {
@@ -1963,6 +2298,8 @@ function renderAll() {
       toggleMonthReconciled(btn.dataset.reconYm);
     });
   });
+
+  bindDynamicEditDeleteButtons(movs, parcelas, terceiros, investimentos);
 }
 
 /* ==========================================================================
@@ -1999,11 +2336,18 @@ document.addEventListener('DOMContentLoaded', () => {
     btnGoToFluxo.addEventListener('click', () => switchTab('projecao'));
   }
 
+  const btnGoToMovs = document.getElementById('btnGoToMovs');
+  if (btnGoToMovs) {
+    btnGoToMovs.addEventListener('click', () => switchTab('movimentacoes'));
+  }
+
   document.getElementById('btnOpenQuickAdd').addEventListener('click', openModal);
   document.getElementById('btnCloseModal').addEventListener('click', closeModal);
+  document.getElementById('btnCloseEditModal').addEventListener('click', closeEditModal);
   document.getElementById('btnSync').addEventListener('click', syncFromBackend);
   document.getElementById('configForm').addEventListener('submit', saveConfig);
   document.getElementById('quickAddForm').addEventListener('submit', handleQuickAddSubmit);
+  document.getElementById('editEntryForm').addEventListener('submit', handleSaveEditSubmit);
 
   const appearanceForm = document.getElementById('appearanceForm');
   if (appearanceForm) appearanceForm.addEventListener('submit', saveAppearance);
@@ -2011,12 +2355,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const addCardRuleForm = document.getElementById('addCardRuleForm');
   if (addCardRuleForm) addCardRuleForm.addEventListener('submit', handleAddCardRule);
 
+  const filterPeriod = document.getElementById('filterMovPeriod');
   const filterMonth = document.getElementById('filterMovMonth');
   const filterType = document.getElementById('filterMovType');
   const filterAccount = document.getElementById('filterMovAccount');
   const filterSearch = document.getElementById('filterMovSearch');
   const clearFiltersBtn = document.getElementById('btnClearMovFilters');
 
+  if (filterPeriod) {
+    filterPeriod.addEventListener('change', () => {
+      state.movFilters.period = filterPeriod.value;
+      renderAll();
+    });
+  }
   if (filterMonth) {
     filterMonth.addEventListener('change', () => {
       state.movFilters.month = filterMonth.value;
@@ -2043,7 +2394,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (clearFiltersBtn) {
     clearFiltersBtn.addEventListener('click', () => {
-      state.movFilters = { month: 'ALL', type: 'ALL', account: 'ALL', search: '' };
+      state.movFilters = { period: 'ALL', month: 'ALL', type: 'ALL', account: 'ALL', search: '' };
+      if (filterPeriod) filterPeriod.value = 'ALL';
       if (filterMonth) filterMonth.value = 'ALL';
       if (filterType) filterType.value = 'ALL';
       if (filterAccount) filterAccount.value = 'ALL';

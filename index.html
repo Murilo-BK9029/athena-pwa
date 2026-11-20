@@ -66,6 +66,16 @@
 
         <div class="card">
           <div class="card-header-inline">
+            <h2>Lançamentos Recentes</h2>
+            <button id="btnGoToMovs" class="btn btn-ghost btn-sm" type="button">Ver todos →</button>
+          </div>
+          <div id="homeRecentEntriesList" class="list-stack">
+            <p class="muted">Nenhum lançamento recente encontrado.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header-inline">
             <h2>Alertas e Vencimentos Próximos</h2>
             <button id="btnGoToFluxo" class="btn btn-ghost btn-sm" type="button">Abrir Fluxo 2027 →</button>
           </div>
@@ -90,11 +100,16 @@
       <section id="tab-movimentacoes" class="tab-panel">
         <div class="card">
           <div class="card-header-inline">
-            <h2>Movimentações por Mês</h2>
+            <h2>Todas as Movimentações (Passadas, Atuais e Futuras)</h2>
             <button id="btnClearMovFilters" class="btn btn-ghost btn-sm" type="button">Limpar Filtros</button>
           </div>
 
           <div class="filter-bar">
+            <select id="filterMovPeriod" aria-label="Filtrar por período">
+              <option value="ALL">Todos (Passados + Futuros)</option>
+              <option value="PAST">Apenas Passados / Até Hoje</option>
+              <option value="FUTURE">Apenas Futuros</option>
+            </select>
             <select id="filterMovMonth" aria-label="Filtrar por mês">
               <option value="ALL">Todos os meses</option>
             </select>
@@ -137,7 +152,7 @@
       <!-- Seção Terceiros -->
       <section id="tab-terceiros" class="tab-panel">
         <div class="card">
-          <h2>Pessoas & Filtro Rápido</h2>
+          <h2>Pessoas & Filtro Rápido (Clique no ✕ para remover uma pessoa)</h2>
           <form id="addPersonForm" class="form-row">
             <input type="text" id="newPersonName" placeholder="Adicionar pessoa (ex.: JOAO ou TIO_PAULO)" required />
             <button type="submit" class="btn btn-primary">Adicionar Pessoa</button>
@@ -154,7 +169,7 @@
 
         <div class="card">
           <div class="card-header-inline">
-            <h2>Extrato de Terceiros por Mês</h2>
+            <h2>Extrato de Terceiros por Mês (Editar / Excluir)</h2>
             <span id="terceirosActiveFilterBadge" class="sync-badge">Exibindo: Todos</span>
           </div>
           <div id="terceirosList" class="list-stack"></div>
@@ -239,12 +254,12 @@
         </div>
 
         <div class="card">
-          <h2>Posição Consolidada (Preço Médio e Cotação)</h2>
+          <h2>Posição Consolidada (Excluir Ativo Inteiro)</h2>
           <div id="investimentosConsolidatedList" class="list-stack"></div>
         </div>
 
         <div class="card">
-          <h2>Histórico de Operações</h2>
+          <h2>Histórico de Operações (Editar / Excluir Ordem)</h2>
           <div id="investimentosList" class="list-stack"></div>
         </div>
       </section>
@@ -284,7 +299,7 @@
 
         <div class="card">
           <h2>Cartões e Regras de Fechamento / Vencimento</h2>
-          <p class="muted" style="margin-bottom: 12px;">Cadastre os cartões que você possui e configure individualmente quando cada um fecha e vence (dia fixo, último dia do mês ou dias após o fechamento).</p>
+          <p class="muted" style="margin-bottom: 12px;">Cadastre os cartões que você possui e configure individualmente quando cada um fecha e vence.</p>
 
           <form id="addCardRuleForm" class="form-row" style="margin-bottom: 14px;">
             <input type="text" id="newCardName" list="suggestedCards" placeholder="Nome do cartão (ex.: Nubank, C6 Bank)" required />
@@ -414,7 +429,7 @@
           </label>
         </div>
 
-        <!-- Recorrência para Receitas/Despesas em Conta -->
+        <!-- Recorrência -->
         <div id="recurrenceBox" class="extra-box">
           <label class="checkbox-inline">
             <input type="checkbox" id="txIsRecorrente" />
@@ -432,7 +447,7 @@
           </div>
         </div>
 
-        <!-- Campos extras exibidos apenas quando Compra no Cartão -->
+        <!-- Campos extras Compra no Cartão -->
         <div id="cardExtraFields" class="extra-box hidden">
           <div class="form-row">
             <label>
@@ -467,6 +482,56 @@
         </div>
 
         <button type="submit" id="btnSubmitTx" class="btn btn-primary">Confirmar e Sincronizar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Universal de Edição -->
+  <div id="editEntryModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="editModalTitle">Editar Lançamento</h2>
+        <button id="btnCloseEditModal" class="btn-icon" type="button" aria-label="Fechar">✕</button>
+      </div>
+      <form id="editEntryForm" class="form-stack">
+        <input type="hidden" id="editKind" />
+        <input type="hidden" id="editId" />
+
+        <label id="editDescWrap">
+          Descrição / Ticker
+          <input type="text" id="editDesc" required />
+        </label>
+
+        <div class="form-row" id="editDateValRow">
+          <label id="editDateWrap">
+            Data
+            <input type="date" id="editDate" />
+          </label>
+          <label id="editValWrap">
+            Valor (R$)
+            <input type="number" id="editValor" step="0.01" min="0.01" />
+          </label>
+        </div>
+
+        <div class="form-row" id="editExtraRow">
+          <label id="editAccountWrap">
+            Conta / Cartão / Pessoa
+            <input type="text" id="editAccountOrPerson" />
+          </label>
+          <label id="editQtyWrap" class="hidden">
+            Quantidade
+            <input type="number" id="editQty" step="0.0001" min="0" />
+          </label>
+          <label id="editStatusWrap" class="hidden">
+            Status
+            <select id="editStatus">
+              <option value="PENDENTE">PENDENTE</option>
+              <option value="QUITADO">QUITADO</option>
+            </select>
+          </label>
+        </div>
+
+        <button type="submit" id="btnSaveEdit" class="btn btn-primary">Salvar Alterações</button>
       </form>
     </div>
   </div>
