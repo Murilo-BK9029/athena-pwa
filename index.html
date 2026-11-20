@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Athena - Sistema Financeiro Integrado</title>
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#0b0f17" />
   <link rel="manifest" href="./manifest.json" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
+<body data-theme="blue-dark">
   <div class="app-shell">
     <header class="topbar">
       <div>
@@ -75,7 +75,7 @@
         </div>
       </section>
 
-      <!-- Seção Contas (Saldo Atual Individual por Conta/Banco) -->
+      <!-- Seção Contas -->
       <section id="tab-contas" class="tab-panel">
         <div class="card">
           <h2>Saldo Atual por Conta / Banco</h2>
@@ -119,11 +119,11 @@
         </div>
       </section>
 
-      <!-- Seção Cartões (Por Mês e Por Cartão + Soma Mensal) -->
+      <!-- Seção Cartões -->
       <section id="tab-cartoes" class="tab-panel">
         <div class="card">
           <h2>1. Faturas Detalhadas por Mês e por Cartão</h2>
-          <p class="muted" style="margin-bottom: 12px;">Cada cartão é exibido separadamente dentro do mês da fatura, mostrando Minha Parte, Rateio e Saldo Restante de parcelamentos.</p>
+          <p class="muted" style="margin-bottom: 12px;">Cada cartão é exibido separadamente dentro do mês da fatura, mostrando vencimento, Minha Parte, Rateio e Saldo Restante de parcelamentos.</p>
           <div id="cartoesByMonthAndCardList" class="list-stack"></div>
         </div>
 
@@ -163,6 +163,21 @@
 
       <!-- Seção Investimentos -->
       <section id="tab-investimentos" class="tab-panel">
+        <div class="kpi-grid">
+          <article class="kpi-card">
+            <span class="kpi-label">Valor da Carteira</span>
+            <strong id="invKpiValorAtual" class="kpi-value">R$ 0,00</strong>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">Custo / Aportes Líquidos</span>
+            <strong id="invKpiCustoLiquido" class="kpi-value">R$ 0,00</strong>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">Proventos Recebidos</span>
+            <strong id="invKpiProventos" class="kpi-value">R$ 0,00</strong>
+          </article>
+        </div>
+
         <div class="card">
           <div class="card-header-inline">
             <h2>Novo Lançamento de Investimento</h2>
@@ -217,7 +232,14 @@
         </div>
 
         <div class="card">
-          <h2>Posição Consolidada</h2>
+          <h2>Gráfico por Ativo (Posição)</h2>
+          <div id="investimentosChartContainer" class="chart-wrap">
+            <p class="muted">Adicione operações para visualizar o gráfico da carteira.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Posição Consolidada (Preço Médio e Cotação)</h2>
           <div id="investimentosConsolidatedList" class="list-stack"></div>
         </div>
 
@@ -243,6 +265,64 @@
 
       <!-- Seção Configurações -->
       <section id="tab-config" class="tab-panel">
+        <div class="card">
+          <h2>Aparência e Temas do Sistema</h2>
+          <p class="muted" style="margin-bottom: 12px;">Escolha entre os 4 temas disponíveis. A preferência fica salva neste dispositivo.</p>
+          <form id="appearanceForm" class="form-stack">
+            <label>
+              Tema Visual
+              <select id="cfgTheme">
+                <option value="blue-dark">Azul / Escuro (Atual)</option>
+                <option value="white-white">Branco / Branco (Claro Clean)</option>
+                <option value="dark">Escuro (Grafite Neutro)</option>
+                <option value="blue-white">Azul / Branco (Claro com Azul)</option>
+              </select>
+            </label>
+            <button type="submit" class="btn btn-primary">Aplicar Tema</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Ciclo de Fechamento e Vencimento da Fatura</h2>
+          <p class="muted" style="margin-bottom: 12px;">Defina quando a fatura fecha (dia fixo ou último dia do mês) e quando vence (dia fixo ou X dias após o fechamento).</p>
+          <form id="billingCycleForm" class="form-stack">
+            <div class="form-row">
+              <label>
+                Fechamento da Fatura
+                <select id="cfgClosingMode">
+                  <option value="DAY">Dia fixo do mês (1 a 28)</option>
+                  <option value="LAST">Último dia do mês</option>
+                </select>
+              </label>
+              <label id="closingDayWrap">
+                Dia de Fechamento (1 a 28)
+                <input type="number" id="cfgClosingDay" min="1" max="28" value="25" />
+              </label>
+            </div>
+
+            <div class="form-row">
+              <label>
+                Regra de Vencimento
+                <select id="cfgDueMode">
+                  <option value="DAYS_AFTER">Quantidade de dias após o fechamento</option>
+                  <option value="DAY">Dia fixo do mês (1 a 31)</option>
+                </select>
+              </label>
+              <label id="dueDaysWrap">
+                Dias à Frente do Fechamento
+                <input type="number" id="cfgDueDays" min="1" max="45" value="6" />
+              </label>
+              <label id="dueDayWrap" class="hidden">
+                Dia Fixo de Vencimento (1 a 31)
+                <input type="number" id="cfgDueDay" min="1" max="31" value="6" />
+              </label>
+            </div>
+
+            <div id="billingPreviewBox" class="alert-warn"></div>
+            <button type="submit" class="btn btn-primary">Salvar Regra de Fatura</button>
+          </form>
+        </div>
+
         <div class="card">
           <h2>Conexão com Google Apps Script (Individual por Usuário)</h2>
           <p class="muted" style="margin-bottom: 12px;">Cada pessoa conecta sua própria URL /exec e chave secreta. Os dados ficam 100% isolados na planilha de cada conta Google.</p>
@@ -368,7 +448,7 @@
           </div>
         </div>
 
-        <!-- Campos extras exibidos apenas quando Compra no Cartão ou Reembolso -->
+        <!-- Campos extras exibidos apenas quando Compra no Cartão -->
         <div id="cardExtraFields" class="extra-box hidden">
           <div class="form-row">
             <label>
@@ -398,6 +478,7 @@
               <input type="number" id="txDesconto" step="0.01" min="0" value="0" />
             </label>
           </div>
+          <div id="cardCyclePreview" class="muted" style="font-size: 0.78rem;"></div>
           <div id="splitAlert" class="alert-warn hidden"></div>
         </div>
 

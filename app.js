@@ -2,10 +2,21 @@ const STORAGE_KEYS = {
   CONFIG: 'athena_cfg_v1',
   CACHE: 'athena_cache_v1',
   PEOPLE: 'athena_people_v1',
-  RECONCILED: 'athena_reconciled_months_v1'
+  RECONCILED: 'athena_reconciled_months_v1',
+  THEME: 'athena_theme_v1',
+  BILLING: 'athena_billing_cycle_v1'
 };
 
 const DEFAULT_PEOPLE = ['MAE', 'ERIC', 'ANDERSON'];
+const ALLOWED_THEMES = ['blue-dark', 'white-white', 'dark', 'blue-white'];
+
+const DEFAULT_BILLING = {
+  closingMode: 'DAY', // 'DAY' | 'LAST'
+  closingDay: 25,
+  dueMode: 'DAYS_AFTER', // 'DAYS_AFTER' | 'DAY'
+  dueDays: 6,
+  dueDay: 6
+};
 
 const MONTH_NAMES_FULL = {
   '01': 'JANEIRO',
@@ -95,6 +106,8 @@ const state = {
   snapshot: null,
   people: [...DEFAULT_PEOPLE],
   reconciledMonths: {},
+  theme: 'blue-dark',
+  billing: { ...DEFAULT_BILLING },
   selectedPersonFilter: 'ALL',
   movFilters: {
     month: 'ALL',
@@ -105,8 +118,132 @@ const state = {
 };
 
 /* ==========================================================================
-   1. PADRONIZAÇÃO ESTRITA DE CADASTROS, DATAS E BADGES
+   1. TEMA, CICLO DE FATURA, NORMALIZAÇÃO E FORMATAÇÃO
    ========================================================================== */
+
+function applyTheme(themeName) {
+  const chosen = ALLOWED_THEMES.includes(themeName) ? themeName : 'blue-dark';
+  state.theme = chosen;
+  document.body.setAttribute('data-theme', chosen);
+  localStorage.setItem(STORAGE_KEYS.THEME, chosen);
+
+  const selectEl = document.getElementById('cfgTheme');
+  if (selectEl) selectEl.value = chosen;
+}
+
+function getClosingDateForYearMonth(year, month1To12, billing = state.billing) {
+  if (billing.closingMode === 'LAST') {
+    const lastDay = new Date(Date.UTC(year, month1To12, 0)).getUTCDate();
+    return new Date(Date.UTC(year, month1To12 - 1, lastDay));
+  }
+  const desiredDay = Math.min(28, Math.max(1, Number(billing.closingDay || 25)));
+  const maxDay = new Date(Date.UTC(year, month1To12, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month1To12 - 1, Math.min(desiredDay, maxDay)));
+}
+
+function computeStatementCycleForDate(dateIso, installmentIndex0 = 0, billing = state.billing) {
+  const parts = String(dateIso || '').slice(0, 10).split('-').map(Number);
+  if (parts.length !== 3) {
+    return { competencia: '', dueDateIso: '', closingDateIso: '' };
+  }
+
+  const baseYear = parts[0];
+  const baseMonthIdx = parts[1] - 1 + installmentIndex0;
+  const purchaseDate = new Date(Date.UTC(baseYear, baseMonthIdx, parts[2]));
+
+  const pYear = purchaseDate.getUTCFullYear();
+  const pMonth = purchaseDate.getUTCMonth() + 1;
+  const pDay = purchaseDate.getUTCDate();
+
+  const closingThisMonth = getClosingDateForYearMonth(pYear, pMonth, billing);
+  const closingDayThisMonth = closingThisMonth.getUTCDate();
+
+  let closingDate;
+  if (pDay <= closingDayThisMonth) {
+    closingDate = closingThisMonth;
+  } else {
+    closingDate = getClosingDateForYearMonth(pYear, pMonth + 1, billing);
+  }
+
+  let dueDate;
+  if (billing.dueMode === 'DAY') {
+    const targetDay = Math.min(31, Math.max(1, Number(billing.dueDay || 6)));
+    // Se dia do vencimento for menor ou igual ao fechamento, vence no mês seguinte ao fechamento
+    const cYear = closingDate.getUTCFullYear();
+    const cMonth = closingDate.getUTCMonth() + 1;
+    const cDay = closingDate.getUTCDate();
+    const dueMonth = targetDay <= cDay ? cMonth + 1 : cMonth;
+    const maxDueDay = new Date(Date.UTC(cYear, dueMonth, 0)).getUTCDate();
+    dueDate = new Date(Date.UTC(cYear, dueMonth - 1, Math.min(targetDay, maxDueDay)));
+  } else {
+    const daysAfter = Math.max(1, Number(billing.dueDays || 6));
+    dueDate = new Date(closingDate.getTime() + daysAfter * 86400000);
+  }
+
+  const competencia = `${dueDate.getUTCFullYear()}-${String(dueDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  return {
+    competencia,
+    closingDateIso: closingDate.toISOString().slice(0, 10),
+    dueDateIso: dueDate.toISOString().slice(0, 10)
+  };
+}
+
+function updateBillingFormUI() {
+  const closingMode = document.getElementById('cfgClosingMode')?.value || state.billing.closingMode;
+  const dueMode = document.getElementById('cfgDueMode')?.value || state.billing.dueMode;
+  const closingDayWrap = document.getElementById('closingDayWrap');
+  const dueDaysWrap = document.getElementById('dueDaysWrap');
+  const dueDayWrap = document.getElementById('dueDayWrap');
+  const previewBox = document.getElementById('billingPreviewBox');
+
+  if (closingDayWrap) {
+    closingDayWrap.classList.toggle('hidden', closingMode === 'LAST');
+  }
+  if (dueDaysWrap) {
+    dueDaysWrap.classList.toggle('hidden', dueMode !== 'DAYS_AFTER');
+  }
+  if (dueDayWrap) {
+    dueDayWrap.classList.toggle('hidden', dueMode !== 'DAY');
+  }
+
+  const draftBilling = {
+    closingMode,
+    closingDay: Number(document.getElementById('cfgClosingDay')?.value || 25),
+    dueMode,
+    dueDays: Number(document.getElementById('cfgDueDays')?.value || 6),
+    dueDay: Number(document.getElementById('cfgDueDay')?.value || 6)
+  };
+
+  const sampleCycle = computeStatementCycleForDate('2026-11-20', 0, draftBilling);
+  if (previewBox) {
+    const fechaTxt = closingMode === 'LAST'
+      ? 'último dia do mês'
+      : `dia ${draftBilling.closingDay}`;
+    const venceTxt = dueMode === 'DAY'
+      ? `dia ${draftBilling.dueDay}`
+      : `${draftBilling.dueDays} dia(s) após o fechamento`;
+
+    previewBox.textContent =
+      `Regra: fecha no ${fechaTxt} e vence em ${venceTxt}. Exemplo (compra em 20/11/2026): fecha em ${formatDateBR(sampleCycle.closingDateIso)}, vence em ${formatDateBR(sampleCycle.dueDateIso)} (fatura ${sampleCycle.competencia}).`;
+  }
+
+  updateCardCyclePreviewInModal();
+}
+
+function updateCardCyclePreviewInModal() {
+  const previewEl = document.getElementById('cardCyclePreview');
+  const tipo = document.getElementById('txTipo')?.value;
+  if (!previewEl || tipo !== 'COMPRA_CARTAO') return;
+
+  const dt = document.getElementById('txData')?.value || new Date().toISOString().slice(0, 10);
+  const parcelas = Math.max(1, parseInt(document.getElementById('txParcelas')?.value || '1', 10));
+  const firstCycle = computeStatementCycleForDate(dt, 0, state.billing);
+  const lastCycle = computeStatementCycleForDate(dt, parcelas - 1, state.billing);
+
+  previewEl.textContent = parcelas > 1
+    ? `1ª parcela vence em ${formatDateBR(firstCycle.dueDateIso)} (${firstCycle.competencia}) • Última (${parcelas}ª) em ${formatDateBR(lastCycle.dueDateIso)} (${lastCycle.competencia}).`
+    : `Fatura prevista: ${firstCycle.competencia} • Vencimento estimado: ${formatDateBR(firstCycle.dueDateIso)}.`;
+}
 
 function stripDiacritics(str) {
   return String(str || '')
@@ -284,9 +421,32 @@ function loadSavedState() {
     if (rawRecon) {
       state.reconciledMonths = JSON.parse(rawRecon) || {};
     }
+    const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
+    if (savedTheme && ALLOWED_THEMES.includes(savedTheme)) {
+      state.theme = savedTheme;
+    }
+    const rawBilling = localStorage.getItem(STORAGE_KEYS.BILLING);
+    if (rawBilling) {
+      state.billing = Object.assign({}, DEFAULT_BILLING, JSON.parse(rawBilling));
+    }
   } catch (err) {
     console.warn('Falha ao carregar armazenamento local:', err);
   }
+
+  applyTheme(state.theme);
+
+  const closingModeEl = document.getElementById('cfgClosingMode');
+  const closingDayEl = document.getElementById('cfgClosingDay');
+  const dueModeEl = document.getElementById('cfgDueMode');
+  const dueDaysEl = document.getElementById('cfgDueDays');
+  const dueDayEl = document.getElementById('cfgDueDay');
+
+  if (closingModeEl) closingModeEl.value = state.billing.closingMode;
+  if (closingDayEl) closingDayEl.value = state.billing.closingDay;
+  if (dueModeEl) dueModeEl.value = state.billing.dueMode;
+  if (dueDaysEl) dueDaysEl.value = state.billing.dueDays;
+  if (dueDayEl) dueDayEl.value = state.billing.dueDay;
+  updateBillingFormUI();
 
   const urlInput = document.getElementById('cfgApiUrl');
   const keyInput = document.getElementById('cfgApiKey');
@@ -306,6 +466,29 @@ function loadSavedState() {
 
   renderPeopleControls();
   renderAll();
+}
+
+function saveAppearance(event) {
+  event.preventDefault();
+  const themeVal = document.getElementById('cfgTheme').value;
+  applyTheme(themeVal);
+  renderAll();
+  showToast('Tema atualizado com sucesso.', 'success');
+}
+
+function saveBillingCycle(event) {
+  event.preventDefault();
+  state.billing = {
+    closingMode: document.getElementById('cfgClosingMode').value,
+    closingDay: Math.min(28, Math.max(1, Number(document.getElementById('cfgClosingDay').value || 25))),
+    dueMode: document.getElementById('cfgDueMode').value,
+    dueDays: Math.min(45, Math.max(1, Number(document.getElementById('cfgDueDays').value || 6))),
+    dueDay: Math.min(31, Math.max(1, Number(document.getElementById('cfgDueDay').value || 6)))
+  };
+  localStorage.setItem(STORAGE_KEYS.BILLING, JSON.stringify(state.billing));
+  updateBillingFormUI();
+  renderAll();
+  showToast('Regra de fechamento e vencimento salva.', 'success');
 }
 
 function saveConfig(event) {
@@ -523,6 +706,7 @@ function updateQuickFormVisibility() {
   if (tipo === 'COMPRA_CARTAO') {
     cardBox.classList.remove('hidden');
     recurrenceBox.classList.add('hidden');
+    updateCardCyclePreviewInModal();
   } else {
     cardBox.classList.add('hidden');
     recurrenceBox.classList.remove('hidden');
@@ -618,6 +802,8 @@ async function handleQuickAddSubmit(event) {
         valorParteTerceiro = valor;
       }
 
+      const firstCycle = computeStatementCycleForDate(data, 0, state.billing);
+
       const res = await postToBackend('createCardPurchase', {
         idempotency_key: baseKey,
         data_compra: data,
@@ -632,7 +818,9 @@ async function handleQuickAddSubmit(event) {
         valor_minha_parte: valorMinhaParte,
         valor_parte_terceiro: valorParteTerceiro,
         desconto_estimado: desconto,
-        is_estimativa: desconto > 0 || resp === 'MAE_COMPARTILHADO'
+        is_estimativa: desconto > 0 || resp === 'MAE_COMPARTILHADO',
+        competencia_inicial: firstCycle.competencia,
+        data_vencimento_inicial: firstCycle.dueDateIso
       });
 
       if (res && res.alerta_divergencia) {
@@ -640,8 +828,8 @@ async function handleQuickAddSubmit(event) {
       } else {
         showToast(
           parcelas > 1
-            ? `Compra parcelada em ${parcelas}x registrada com sucesso!`
-            : 'Compra no cartão registrada com sucesso!',
+            ? `Compra parcelada em ${parcelas}x registrada (vence ${formatDateBR(firstCycle.dueDateIso)})!`
+            : `Compra no cartão registrada (vence ${formatDateBR(firstCycle.dueDateIso)})!`,
           'success'
         );
       }
@@ -790,8 +978,22 @@ async function handleUpdateQuotes() {
 }
 
 /* ==========================================================================
-   5. RENDERIZAÇÃO POR SEÇÃO (INÍCIO EXECUTIVO, CONTAS, MOVS, CARTÕES, ETC.)
+   5. RENDERIZAÇÃO POR SEÇÃO (INÍCIO, CONTAS, MOVS, CARTÕES, TERCEIROS, INV)
    ========================================================================== */
+
+function getChartColorsForCurrentTheme() {
+  const t = state.theme;
+  if (t === 'white-white') {
+    return { barOut: '#d97706', barOk: '#16a34a', barNeg: '#dc2626', axis: '#cbd5e1', label: '#475569' };
+  }
+  if (t === 'blue-white') {
+    return { barOut: '#d97706', barOk: '#0284c7', barNeg: '#dc2626', axis: '#93c5fd', label: '#334155' };
+  }
+  if (t === 'dark') {
+    return { barOut: '#f59e0b', barOk: '#22c55e', barNeg: '#ef4444', axis: '#3f3f46', label: '#a1a1aa' };
+  }
+  return { barOut: '#f59e0b', barOk: '#22c55e', barNeg: '#ef4444', axis: '#25324a', label: '#94a3b8' };
+}
 
 function renderMonthlyChart(scheduleRows) {
   const container = document.getElementById('monthlyChartContainer');
@@ -802,6 +1004,7 @@ function renderMonthlyChart(scheduleRows) {
     return;
   }
 
+  const colors = getChartColorsForCurrentTheme();
   const maxAbs = Math.max(
     1,
     ...scheduleRows.map((s) => Math.max(Math.abs(s.aPagar), Math.abs(s.saldoFinal)))
@@ -820,29 +1023,71 @@ function renderMonthlyChart(scheduleRows) {
 
     const yPagar = baseY - hPagar;
     const ySaldo = item.saldoFinal >= 0 ? baseY - hSaldo : baseY;
-    const colorSaldo = item.saldoFinal >= 0 ? '#22c55e' : '#ef4444';
+    const colorSaldo = item.saldoFinal >= 0 ? colors.barOk : colors.barNeg;
 
     const labelShort = formatMonthShort(item.mes);
     return `
       <g>
-        <rect x="${x0}" y="${yPagar}" width="${barWidth}" height="${hPagar}" rx="4" fill="#f59e0b">
+        <rect x="${x0}" y="${yPagar}" width="${barWidth}" height="${hPagar}" rx="4" fill="${colors.barOut}">
           <title>${labelShort} • A pagar / saídas: ${formatBRL(item.aPagar)}</title>
         </rect>
         <rect x="${x0 + barWidth + 4}" y="${ySaldo}" width="${barWidth}" height="${hSaldo}" rx="4" fill="${colorSaldo}">
           <title>${labelShort} • Saldo final na conta: ${formatBRL(item.saldoFinal)}</title>
         </rect>
-        <text x="${x0 + barWidth + 2}" y="${chartHeight - 12}" text-anchor="middle" fill="#94a3b8" font-size="11">${labelShort}</text>
+        <text x="${x0 + barWidth + 2}" y="${chartHeight - 12}" text-anchor="middle" fill="${colors.label}" font-size="11">${labelShort}</text>
       </g>
     `;
   }).join('');
 
   container.innerHTML = `
     <div class="chart-legend">
-      <span><i class="dot-reemb" style="background:#f59e0b;"></i> A pagar / saídas no mês</span>
-      <span><i class="dot-proj" style="background:#22c55e;"></i> Saldo final na conta</span>
+      <span><i class="dot-reemb" style="background:${colors.barOut};"></i> A pagar / saídas no mês</span>
+      <span><i class="dot-proj" style="background:${colors.barOk};"></i> Saldo final na conta</span>
     </div>
     <svg width="${width}" height="${chartHeight}" viewBox="0 0 ${width} ${chartHeight}" role="img" aria-label="Cronograma mensal de pagamentos e saldo na conta">
-      <line x1="12" y1="${baseY}" x2="${width - 12}" y2="${baseY}" stroke="#25324a" stroke-width="1.5" />
+      <line x1="12" y1="${baseY}" x2="${width - 12}" y2="${baseY}" stroke="${colors.axis}" stroke-width="1.5" />
+      ${barsSvg}
+    </svg>
+  `;
+}
+
+function renderPortfolioChart(positions) {
+  const container = document.getElementById('investimentosChartContainer');
+  if (!container) return;
+
+  if (!Array.isArray(positions) || !positions.length) {
+    container.innerHTML = '<p class="muted">Adicione operações para visualizar o gráfico da carteira.</p>';
+    return;
+  }
+
+  const colors = getChartColorsForCurrentTheme();
+  const maxVal = Math.max(1, ...positions.map((p) => p.valorAtual));
+  const barWidth = 34;
+  const gap = 26;
+  const chartHeight = 165;
+  const baseY = 122;
+  const width = Math.max(360, positions.length * (barWidth + gap) + 40);
+
+  const barsSvg = positions.map((p, idx) => {
+    const x0 = 20 + idx * (barWidth + gap);
+    const h = Math.max(4, Math.round((p.valorAtual / maxVal) * 92));
+    const y = baseY - h;
+    return `
+      <g>
+        <rect x="${x0}" y="${y}" width="${barWidth}" height="${h}" rx="5" fill="${colors.barOk}">
+          <title>${p.ticker} • Valor: ${formatBRL(p.valorAtual)} • PM: ${formatBRL(p.pm)}</title>
+        </rect>
+        <text x="${x0 + barWidth / 2}" y="${chartHeight - 12}" text-anchor="middle" fill="${colors.label}" font-size="11">${p.ticker}</text>
+      </g>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="chart-legend">
+      <span><i class="dot-proj" style="background:${colors.barOk};"></i> Valor por ativo na carteira</span>
+    </div>
+    <svg width="${width}" height="${chartHeight}" viewBox="0 0 ${width} ${chartHeight}" role="img" aria-label="Gráfico de alocação por ativo">
+      <line x1="12" y1="${baseY}" x2="${width - 12}" y2="${baseY}" stroke="${colors.axis}" stroke-width="1.5" />
       ${barsSvg}
     </svg>
   `;
@@ -875,13 +1120,13 @@ function renderExecutiveHome(currentRow, faturasAbertas, terceiros, currentMonth
     summaryEl.innerHTML = '<p class="muted">Sincronize para visualizar o resumo executivo do mês atual.</p>';
   }
 
-  // Alertas próximos (faturas em aberto + pendências de terceiros)
   const alerts = [];
   if (faturasAbertas > 0) {
+    const sampleDue = computeStatementCycleForDate(new Date().toISOString().slice(0, 10), 0, state.billing);
     alerts.push(`
       <div class="list-item">
         <div>
-          <strong>Faturas de Cartão em Aberto</strong>
+          <strong>Faturas de Cartão em Aberto</strong> <span class="badge badge-warn">Venc. ref. ${formatDateBR(sampleDue.dueDateIso)}</span>
           <span class="month-detail-meta">Total acumulado de parcelas não pagas</span>
         </div>
         <strong class="amt-neg">${formatBRL(faturasAbertas)}</strong>
@@ -1066,7 +1311,6 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
     return;
   }
 
-  // Calcula saldo restante por compra_id para parcelamentos de longo prazo (ex.: 4/72)
   const remainingByPurchase = {};
   openParcelas.forEach((p) => {
     const cid = String(p.compra_id || '');
@@ -1087,8 +1331,12 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
     const desconto = Number(p.desconto_rateado || 0);
 
     if (!byMonth.has(monthKey)) {
+      const sampleDue = monthKey !== '0000-00'
+        ? computeStatementCycleForDate(`${monthKey}-10`, 0, state.billing)
+        : { dueDateIso: '' };
       byMonth.set(monthKey, {
         monthKey,
+        dueDateIso: sampleDue.dueDateIso,
         totalGeral: 0,
         totalMinhaParte: 0,
         totalTerceiros: 0,
@@ -1127,6 +1375,9 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
   detailContainer.innerHTML = sortedMonths.map((m, idx) => {
     const monthTitle = m.monthKey === '0000-00' ? 'SEM MÊS DEFINIDO' : formatMonthLabel(m.monthKey);
     const isOpen = m.monthKey === currentMonthYm || idx === 0;
+    const dueBadge = m.dueDateIso
+      ? `<span class="badge badge-info">Venc. ${formatDateBR(m.dueDateIso)}</span>`
+      : '';
     const cardsArr = Array.from(m.cards.values()).sort((a, b) =>
       a.cardName.localeCompare(b.cardName)
     );
@@ -1144,7 +1395,7 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
         const descTxt = desc > 0 ? ` • Desc.: ${formatBRL(desc)}` : '';
 
         const saldoRestanteCompra = item.compra_id && totP > 1
-          ? ` • Saldo restante parcelamento: ${formatBRL(remainingByPurchase[item.compra_id] || 0)}`
+          ? ` • Saldo restante: ${formatBRL(remainingByPurchase[item.compra_id] || 0)}`
           : '';
 
         return `
@@ -1181,6 +1432,7 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
           <span class="month-header-left">
             <span class="month-chevron">▶</span>
             <span class="month-title">${monthTitle}</span>
+            ${dueBadge}
             <span class="month-count">${cardsArr.length} cartão(ões)</span>
           </span>
           <span class="month-balance-ok">Fatura Total: ${formatBRL(m.totalGeral)}</span>
@@ -1222,7 +1474,6 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
   const listEl = document.getElementById('terceirosList');
   if (!summaryGridEl || !listEl) return;
 
-  // Calcula situação por pessoa (Pendente vs. Quitado R$ 0,00)
   const balanceByPerson = {};
   state.people.forEach((p) => {
     balanceByPerson[p] = 0;
@@ -1317,9 +1568,16 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
 function renderInvestmentsSection(investimentos, cotacoesCache) {
   const consolidatedEl = document.getElementById('investimentosConsolidatedList');
   const historyEl = document.getElementById('investimentosList');
+  const kpiValorEl = document.getElementById('invKpiValorAtual');
+  const kpiCustoEl = document.getElementById('invKpiCustoLiquido');
+  const kpiProvEl = document.getElementById('invKpiProventos');
   if (!consolidatedEl || !historyEl) return;
 
   if (!investimentos.length) {
+    if (kpiValorEl) kpiValorEl.textContent = formatBRL(0);
+    if (kpiCustoEl) kpiCustoEl.textContent = formatBRL(0);
+    if (kpiProvEl) kpiProvEl.textContent = formatBRL(0);
+    renderPortfolioChart([]);
     consolidatedEl.innerHTML = '<p class="muted">Nenhuma posição consolidada ainda.</p>';
     historyEl.innerHTML = '<p class="muted">Nenhuma operação de investimento registrada na base ainda.</p>';
     return;
@@ -1333,7 +1591,6 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
     });
   }
 
-  // Ordena cronologicamente para calcular preço médio ponderado corretamente
   const chronologicalOps = [...investimentos].sort((a, b) =>
     String(a.data_op || a.data_operacao || '').localeCompare(
       String(b.data_op || b.data_operacao || '')
@@ -1341,6 +1598,8 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
   );
 
   const posMap = new Map();
+  let totalProventos = 0;
+
   chronologicalOps.forEach((op) => {
     const ticker = normalizeTicker(op.ticker || op.nome_ativo || 'ATIVO');
     const tipo = String(op.tipo_op || '').toUpperCase();
@@ -1367,27 +1626,44 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
       pos.custoTotal = Math.max(0, pos.custoTotal - pmAtual * qtd);
     } else if (tipo === 'DIVIDENDO' || tipo === 'JCP' || tipo === 'RENDIMENTO_RF') {
       pos.proventos += val;
+      totalProventos += val;
     }
   });
 
-  const positions = Array.from(posMap.values()).filter(
-    (p) => p.qtdLiquida > 0 || p.custoTotal > 0 || p.proventos > 0
-  );
+  const positions = Array.from(posMap.values())
+    .filter((p) => p.qtdLiquida > 0 || p.custoTotal > 0 || p.proventos > 0)
+    .map((p) => {
+      const pm = p.qtdLiquida > 0 ? p.custoTotal / p.qtdLiquida : 0;
+      const cotAtual = quoteMap[p.ticker] || 0;
+      const valorAtual = cotAtual > 0 && p.qtdLiquida > 0 ? cotAtual * p.qtdLiquida : p.custoTotal;
+      return Object.assign({}, p, { pm, cotAtual, valorAtual });
+    });
+
+  const somaValorAtual = positions.reduce((acc, p) => acc + p.valorAtual, 0);
+  const somaCustoLiquido = positions.reduce((acc, p) => acc + p.custoTotal, 0);
+
+  if (kpiValorEl) kpiValorEl.textContent = formatBRL(somaValorAtual);
+  if (kpiCustoEl) kpiCustoEl.textContent = formatBRL(somaCustoLiquido);
+  if (kpiProvEl) kpiProvEl.textContent = formatBRL(totalProventos);
+
+  renderPortfolioChart(positions);
 
   consolidatedEl.innerHTML = positions.map((p) => {
-    const pm = p.qtdLiquida > 0 ? p.custoTotal / p.qtdLiquida : 0;
-    const cotAtual = quoteMap[p.ticker] || 0;
-    const valorAtual = cotAtual > 0 && p.qtdLiquida > 0 ? cotAtual * p.qtdLiquida : p.custoTotal;
-    const cotInfo = cotAtual > 0 ? ` • Cotação: ${formatBRL(cotAtual)}` : '';
-    const provInfo = p.proventos > 0 ? ` • Proventos: ${formatBRL(p.proventos)}` : '';
+    const cotLabel = p.cotAtual > 0 ? formatBRL(p.cotAtual) : '—';
+    const diff = p.valorAtual - p.custoTotal;
+    const diffSign = diff >= 0 ? '+' : '';
+    const diffCls = diff >= 0 ? 'amt-pos' : 'amt-neg';
 
     return `
       <div class="list-item">
         <div>
           <strong>${p.ticker}</strong> <span class="badge badge-info">${p.classe}</span>
-          <span class="month-detail-meta">Qtd líquida: ${p.qtdLiquida} • PM: ${formatBRL(pm)}${cotInfo}${provInfo}</span>
+          <span class="month-detail-meta">Qtd: ${p.qtdLiquida} • PM: ${formatBRL(p.pm)} • Cotação: ${cotLabel} • Custo: ${formatBRL(p.custoTotal)}</span>
         </div>
-        <strong>${formatBRL(valorAtual)}</strong>
+        <div style="text-align: right;">
+          <strong>${formatBRL(p.valorAtual)}</strong>
+          <span class="month-detail-meta ${diffCls}">${diffSign}${formatBRL(diff)}</span>
+        </div>
       </div>
     `;
   }).join('');
@@ -1532,7 +1808,6 @@ function renderAll() {
   renderThirdPartiesSection(terceiros, currentMonthYm);
   renderInvestmentsSection(investimentos, cotacoesCache);
 
-  // Cronograma mensal até 12/2027 (concentrado na aba Fluxo 2027)
   let saldoAcumulado = caixaHoje;
   const scheduleRows = proj.map((p) => {
     const mes = String(p.competencia || '').slice(0, 7);
@@ -1600,7 +1875,6 @@ function renderAll() {
 
   renderMonthlyChart(scheduleRows);
 
-  // Delega cliques nos botões de conferência mensal (Em aberto / Conferido)
   document.querySelectorAll('[data-recon-ym]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1650,7 +1924,20 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('configForm').addEventListener('submit', saveConfig);
   document.getElementById('quickAddForm').addEventListener('submit', handleQuickAddSubmit);
 
-  // Filtros de Movimentações
+  const appearanceForm = document.getElementById('appearanceForm');
+  if (appearanceForm) appearanceForm.addEventListener('submit', saveAppearance);
+
+  const billingForm = document.getElementById('billingCycleForm');
+  if (billingForm) billingForm.addEventListener('submit', saveBillingCycle);
+
+  ['cfgClosingMode', 'cfgClosingDay', 'cfgDueMode', 'cfgDueDays', 'cfgDueDay'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', updateBillingFormUI);
+      el.addEventListener('change', updateBillingFormUI);
+    }
+  });
+
   const filterMonth = document.getElementById('filterMovMonth');
   const filterType = document.getElementById('filterMovType');
   const filterAccount = document.getElementById('filterMovAccount');
@@ -1701,7 +1988,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnQuotes = document.getElementById('btnUpdateQuotes');
   if (btnQuotes) btnQuotes.addEventListener('click', handleUpdateQuotes);
 
-  ['txTipo', 'txResponsavel', 'txConta', 'txValor', 'txMinhaParte', 'txDesconto', 'txIsRecorrente'].forEach((id) => {
+  ['txTipo', 'txResponsavel', 'txConta', 'txValor', 'txMinhaParte', 'txDesconto', 'txIsRecorrente', 'txData', 'txParcelas'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener('input', updateQuickFormVisibility);
