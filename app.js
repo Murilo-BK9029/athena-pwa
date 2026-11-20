@@ -4,18 +4,24 @@ const STORAGE_KEYS = {
   PEOPLE: 'athena_people_v1',
   RECONCILED: 'athena_reconciled_months_v1',
   THEME: 'athena_theme_v1',
-  BILLING: 'athena_billing_cycle_v1'
+  CARDS_CONFIG: 'athena_cards_config_v1'
 };
 
 const DEFAULT_PEOPLE = ['MAE', 'ERIC', 'ANDERSON'];
 const ALLOWED_THEMES = ['blue-dark', 'white-white', 'dark', 'blue-white'];
 
-const DEFAULT_BILLING = {
+const DEFAULT_CARD_RULE = {
   closingMode: 'DAY', // 'DAY' | 'LAST'
   closingDay: 25,
   dueMode: 'DAYS_AFTER', // 'DAYS_AFTER' | 'DAY'
   dueDays: 6,
   dueDay: 6
+};
+
+const DEFAULT_CARDS_CONFIG = {
+  Nubank: { ...DEFAULT_CARD_RULE, closingDay: 25, dueMode: 'DAYS_AFTER', dueDays: 6, dueDay: 6 },
+  'C6 Bank': { ...DEFAULT_CARD_RULE, closingMode: 'LAST', closingDay: 28, dueMode: 'DAYS_AFTER', dueDays: 7, dueDay: 7 },
+  'Mercado Pago': { ...DEFAULT_CARD_RULE, closingDay: 20, dueMode: 'DAY', dueDays: 6, dueDay: 28 }
 };
 
 const MONTH_NAMES_FULL = {
@@ -107,7 +113,7 @@ const state = {
   people: [...DEFAULT_PEOPLE],
   reconciledMonths: {},
   theme: 'blue-dark',
-  billing: { ...DEFAULT_BILLING },
+  cardsConfig: JSON.parse(JSON.stringify(DEFAULT_CARDS_CONFIG)),
   selectedPersonFilter: 'ALL',
   movFilters: {
     month: 'ALL',
@@ -118,7 +124,7 @@ const state = {
 };
 
 /* ==========================================================================
-   1. TEMA, CICLO DE FATURA, NORMALIZAÇÃO E FORMATAÇÃO
+   1. TEMA, REGRAS POR CARTÃO, NORMALIZAÇÃO E FORMATAÇÃO
    ========================================================================== */
 
 function applyTheme(themeName) {
@@ -131,17 +137,26 @@ function applyTheme(themeName) {
   if (selectEl) selectEl.value = chosen;
 }
 
-function getClosingDateForYearMonth(year, month1To12, billing = state.billing) {
-  if (billing.closingMode === 'LAST') {
+function getCardRule(cardName) {
+  const canon = canonicalizeAccount(cardName || 'Nubank');
+  if (!state.cardsConfig[canon]) {
+    state.cardsConfig[canon] = { ...DEFAULT_CARD_RULE };
+  }
+  return state.cardsConfig[canon];
+}
+
+function getClosingDateForYearMonth(year, month1To12, rule) {
+  if (rule.closingMode === 'LAST') {
     const lastDay = new Date(Date.UTC(year, month1To12, 0)).getUTCDate();
     return new Date(Date.UTC(year, month1To12 - 1, lastDay));
   }
-  const desiredDay = Math.min(28, Math.max(1, Number(billing.closingDay || 25)));
+  const desiredDay = Math.min(28, Math.max(1, Number(rule.closingDay || 25)));
   const maxDay = new Date(Date.UTC(year, month1To12, 0)).getUTCDate();
   return new Date(Date.UTC(year, month1To12 - 1, Math.min(desiredDay, maxDay)));
 }
 
-function computeStatementCycleForDate(dateIso, installmentIndex0 = 0, billing = state.billing) {
+function computeStatementCycleForCard(cardName, dateIso, installmentIndex0 = 0) {
+  const rule = getCardRule(cardName);
   const parts = String(dateIso || '').slice(0, 10).split('-').map(Number);
   if (parts.length !== 3) {
     return { competencia: '', dueDateIso: '', closingDateIso: '' };
@@ -155,20 +170,16 @@ function computeStatementCycleForDate(dateIso, installmentIndex0 = 0, billing = 
   const pMonth = purchaseDate.getUTCMonth() + 1;
   const pDay = purchaseDate.getUTCDate();
 
-  const closingThisMonth = getClosingDateForYearMonth(pYear, pMonth, billing);
+  const closingThisMonth = getClosingDateForYearMonth(pYear, pMonth, rule);
   const closingDayThisMonth = closingThisMonth.getUTCDate();
 
-  let closingDate;
-  if (pDay <= closingDayThisMonth) {
-    closingDate = closingThisMonth;
-  } else {
-    closingDate = getClosingDateForYearMonth(pYear, pMonth + 1, billing);
-  }
+  const closingDate = pDay <= closingDayThisMonth
+    ? closingThisMonth
+    : getClosingDateForYearMonth(pYear, pMonth + 1, rule);
 
   let dueDate;
-  if (billing.dueMode === 'DAY') {
-    const targetDay = Math.min(31, Math.max(1, Number(billing.dueDay || 6)));
-    // Se dia do vencimento for menor ou igual ao fechamento, vence no mês seguinte ao fechamento
+  if (rule.dueMode === 'DAY') {
+    const targetDay = Math.min(31, Math.max(1, Number(rule.dueDay || 6)));
     const cYear = closingDate.getUTCFullYear();
     const cMonth = closingDate.getUTCMonth() + 1;
     const cDay = closingDate.getUTCDate();
@@ -176,7 +187,7 @@ function computeStatementCycleForDate(dateIso, installmentIndex0 = 0, billing = 
     const maxDueDay = new Date(Date.UTC(cYear, dueMonth, 0)).getUTCDate();
     dueDate = new Date(Date.UTC(cYear, dueMonth - 1, Math.min(targetDay, maxDueDay)));
   } else {
-    const daysAfter = Math.max(1, Number(billing.dueDays || 6));
+    const daysAfter = Math.max(1, Number(rule.dueDays || 6));
     dueDate = new Date(closingDate.getTime() + daysAfter * 86400000);
   }
 
@@ -188,46 +199,129 @@ function computeStatementCycleForDate(dateIso, installmentIndex0 = 0, billing = 
   };
 }
 
-function updateBillingFormUI() {
-  const closingMode = document.getElementById('cfgClosingMode')?.value || state.billing.closingMode;
-  const dueMode = document.getElementById('cfgDueMode')?.value || state.billing.dueMode;
-  const closingDayWrap = document.getElementById('closingDayWrap');
-  const dueDaysWrap = document.getElementById('dueDaysWrap');
-  const dueDayWrap = document.getElementById('dueDayWrap');
-  const previewBox = document.getElementById('billingPreviewBox');
+function syncCardsConfigFromData() {
+  const parcelas = (state.snapshot && Array.isArray(state.snapshot.parcelas_cartao))
+    ? state.snapshot.parcelas_cartao
+    : [];
+  parcelas.forEach((p) => {
+    const cName = canonicalizeAccount(p.cartao_id || '');
+    if (cName && cName !== 'Sem Conta' && !state.cardsConfig[cName]) {
+      state.cardsConfig[cName] = { ...DEFAULT_CARD_RULE };
+    }
+  });
+  localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
+}
 
-  if (closingDayWrap) {
-    closingDayWrap.classList.toggle('hidden', closingMode === 'LAST');
-  }
-  if (dueDaysWrap) {
-    dueDaysWrap.classList.toggle('hidden', dueMode !== 'DAYS_AFTER');
-  }
-  if (dueDayWrap) {
-    dueDayWrap.classList.toggle('hidden', dueMode !== 'DAY');
-  }
+function renderCardsConfigManager() {
+  syncCardsConfigFromData();
+  const container = document.getElementById('cardsConfigList');
+  if (!container) return;
 
-  const draftBilling = {
-    closingMode,
-    closingDay: Number(document.getElementById('cfgClosingDay')?.value || 25),
-    dueMode,
-    dueDays: Number(document.getElementById('cfgDueDays')?.value || 6),
-    dueDay: Number(document.getElementById('cfgDueDay')?.value || 6)
-  };
-
-  const sampleCycle = computeStatementCycleForDate('2026-11-20', 0, draftBilling);
-  if (previewBox) {
-    const fechaTxt = closingMode === 'LAST'
-      ? 'último dia do mês'
-      : `dia ${draftBilling.closingDay}`;
-    const venceTxt = dueMode === 'DAY'
-      ? `dia ${draftBilling.dueDay}`
-      : `${draftBilling.dueDays} dia(s) após o fechamento`;
-
-    previewBox.textContent =
-      `Regra: fecha no ${fechaTxt} e vence em ${venceTxt}. Exemplo (compra em 20/11/2026): fecha em ${formatDateBR(sampleCycle.closingDateIso)}, vence em ${formatDateBR(sampleCycle.dueDateIso)} (fatura ${sampleCycle.competencia}).`;
+  const cardNames = Object.keys(state.cardsConfig).sort();
+  if (!cardNames.length) {
+    container.innerHTML = '<p class="muted">Nenhum cartão cadastrado ainda. Adicione um cartão acima.</p>';
+    return;
   }
 
-  updateCardCyclePreviewInModal();
+  container.innerHTML = cardNames.map((name) => {
+    const rule = getCardRule(name);
+    const sample = computeStatementCycleForCard(name, '2026-11-20', 0);
+    const fechaTxt = rule.closingMode === 'LAST' ? 'último dia do mês' : `dia ${rule.closingDay}`;
+    const venceTxt = rule.dueMode === 'DAY' ? `dia ${rule.dueDay}` : `${rule.dueDays} dias após fechamento`;
+
+    return `
+      <div class="card-rule-box" data-card-name="${name}">
+        <div class="card-rule-top">
+          <div>
+            <strong>${name}</strong>
+            <span class="month-detail-meta">Fecha: ${fechaTxt} • Vence: ${venceTxt} • Ex. 20/11/2026 → vence ${formatDateBR(sample.dueDateIso)} (${sample.competencia})</span>
+          </div>
+          <button type="button" class="btn-delete" data-remove-card="${name}" title="Remover cartão">🗑️</button>
+        </div>
+
+        <div class="card-rule-grid">
+          <label>
+            Fechamento
+            <select class="rule-closing-mode">
+              <option value="DAY" ${rule.closingMode === 'DAY' ? 'selected' : ''}>Dia fixo (1 a 28)</option>
+              <option value="LAST" ${rule.closingMode === 'LAST' ? 'selected' : ''}>Último dia do mês</option>
+            </select>
+          </label>
+
+          <label class="rule-closing-day-wrap ${rule.closingMode === 'LAST' ? 'hidden' : ''}">
+            Dia Fechamento (1-28)
+            <input type="number" class="rule-closing-day" min="1" max="28" value="${rule.closingDay}" />
+          </label>
+
+          <label>
+            Regra Vencimento
+            <select class="rule-due-mode">
+              <option value="DAYS_AFTER" ${rule.dueMode === 'DAYS_AFTER' ? 'selected' : ''}>Dias após fechamento</option>
+              <option value="DAY" ${rule.dueMode === 'DAY' ? 'selected' : ''}>Dia fixo do mês</option>
+            </select>
+          </label>
+
+          <label class="rule-due-days-wrap ${rule.dueMode !== 'DAYS_AFTER' ? 'hidden' : ''}">
+            Dias à Frente
+            <input type="number" class="rule-due-days" min="1" max="45" value="${rule.dueDays}" />
+          </label>
+
+          <label class="rule-due-day-wrap ${rule.dueMode !== 'DAY' ? 'hidden' : ''}">
+            Dia Fixo Venc. (1-31)
+            <input type="number" class="rule-due-day" min="1" max="31" value="${rule.dueDay}" />
+          </label>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.card-rule-box').forEach((box) => {
+    const cName = box.dataset.cardName;
+    const onRuleChange = () => {
+      const closingMode = box.querySelector('.rule-closing-mode').value;
+      const closingDay = Math.min(28, Math.max(1, Number(box.querySelector('.rule-closing-day').value || 25)));
+      const dueMode = box.querySelector('.rule-due-mode').value;
+      const dueDays = Math.min(45, Math.max(1, Number(box.querySelector('.rule-due-days').value || 6)));
+      const dueDay = Math.min(31, Math.max(1, Number(box.querySelector('.rule-due-day').value || 6)));
+
+      state.cardsConfig[cName] = { closingMode, closingDay, dueMode, dueDays, dueDay };
+      localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
+      renderCardsConfigManager();
+      renderAll();
+      updateCardCyclePreviewInModal();
+    };
+
+    box.querySelectorAll('select, input').forEach((ctrl) => {
+      ctrl.addEventListener('change', onRuleChange);
+    });
+  });
+
+  container.querySelectorAll('[data-remove-card]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.removeCard;
+      delete state.cardsConfig[target];
+      localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
+      renderCardsConfigManager();
+      renderAll();
+      showToast(`Cartão "${target}" removido da configuração.`, 'info');
+    });
+  });
+}
+
+function handleAddCardRule(event) {
+  event.preventDefault();
+  const input = document.getElementById('newCardName');
+  const cardName = canonicalizeAccount(input.value);
+  if (!cardName) return;
+
+  if (!state.cardsConfig[cardName]) {
+    state.cardsConfig[cardName] = { ...DEFAULT_CARD_RULE };
+    localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
+  }
+  input.value = '';
+  renderCardsConfigManager();
+  renderAll();
+  showToast(`Cartão "${cardName}" adicionado. Ajuste fechamento e vencimento abaixo.`, 'success');
 }
 
 function updateCardCyclePreviewInModal() {
@@ -235,14 +329,15 @@ function updateCardCyclePreviewInModal() {
   const tipo = document.getElementById('txTipo')?.value;
   if (!previewEl || tipo !== 'COMPRA_CARTAO') return;
 
+  const cardName = resolveSelectedAccount();
   const dt = document.getElementById('txData')?.value || new Date().toISOString().slice(0, 10);
   const parcelas = Math.max(1, parseInt(document.getElementById('txParcelas')?.value || '1', 10));
-  const firstCycle = computeStatementCycleForDate(dt, 0, state.billing);
-  const lastCycle = computeStatementCycleForDate(dt, parcelas - 1, state.billing);
+  const firstCycle = computeStatementCycleForCard(cardName, dt, 0);
+  const lastCycle = computeStatementCycleForCard(cardName, dt, parcelas - 1);
 
   previewEl.textContent = parcelas > 1
-    ? `1ª parcela vence em ${formatDateBR(firstCycle.dueDateIso)} (${firstCycle.competencia}) • Última (${parcelas}ª) em ${formatDateBR(lastCycle.dueDateIso)} (${lastCycle.competencia}).`
-    : `Fatura prevista: ${firstCycle.competencia} • Vencimento estimado: ${formatDateBR(firstCycle.dueDateIso)}.`;
+    ? `${cardName}: 1ª parcela vence ${formatDateBR(firstCycle.dueDateIso)} (${firstCycle.competencia}) • ${parcelas}ª em ${formatDateBR(lastCycle.dueDateIso)} (${lastCycle.competencia}).`
+    : `${cardName}: fatura ${firstCycle.competencia} • vencimento estimado ${formatDateBR(firstCycle.dueDateIso)}.`;
 }
 
 function stripDiacritics(str) {
@@ -425,28 +520,19 @@ function loadSavedState() {
     if (savedTheme && ALLOWED_THEMES.includes(savedTheme)) {
       state.theme = savedTheme;
     }
-    const rawBilling = localStorage.getItem(STORAGE_KEYS.BILLING);
-    if (rawBilling) {
-      state.billing = Object.assign({}, DEFAULT_BILLING, JSON.parse(rawBilling));
+    const rawCards = localStorage.getItem(STORAGE_KEYS.CARDS_CONFIG);
+    if (rawCards) {
+      const parsedCards = JSON.parse(rawCards);
+      if (parsedCards && typeof parsedCards === 'object') {
+        state.cardsConfig = parsedCards;
+      }
     }
   } catch (err) {
     console.warn('Falha ao carregar armazenamento local:', err);
   }
 
   applyTheme(state.theme);
-
-  const closingModeEl = document.getElementById('cfgClosingMode');
-  const closingDayEl = document.getElementById('cfgClosingDay');
-  const dueModeEl = document.getElementById('cfgDueMode');
-  const dueDaysEl = document.getElementById('cfgDueDays');
-  const dueDayEl = document.getElementById('cfgDueDay');
-
-  if (closingModeEl) closingModeEl.value = state.billing.closingMode;
-  if (closingDayEl) closingDayEl.value = state.billing.closingDay;
-  if (dueModeEl) dueModeEl.value = state.billing.dueMode;
-  if (dueDaysEl) dueDaysEl.value = state.billing.dueDays;
-  if (dueDayEl) dueDayEl.value = state.billing.dueDay;
-  updateBillingFormUI();
+  renderCardsConfigManager();
 
   const urlInput = document.getElementById('cfgApiUrl');
   const keyInput = document.getElementById('cfgApiKey');
@@ -474,21 +560,6 @@ function saveAppearance(event) {
   applyTheme(themeVal);
   renderAll();
   showToast('Tema atualizado com sucesso.', 'success');
-}
-
-function saveBillingCycle(event) {
-  event.preventDefault();
-  state.billing = {
-    closingMode: document.getElementById('cfgClosingMode').value,
-    closingDay: Math.min(28, Math.max(1, Number(document.getElementById('cfgClosingDay').value || 25))),
-    dueMode: document.getElementById('cfgDueMode').value,
-    dueDays: Math.min(45, Math.max(1, Number(document.getElementById('cfgDueDays').value || 6))),
-    dueDay: Math.min(31, Math.max(1, Number(document.getElementById('cfgDueDay').value || 6)))
-  };
-  localStorage.setItem(STORAGE_KEYS.BILLING, JSON.stringify(state.billing));
-  updateBillingFormUI();
-  renderAll();
-  showToast('Regra de fechamento e vencimento salva.', 'success');
 }
 
 function saveConfig(event) {
@@ -542,6 +613,7 @@ async function syncFromBackend() {
     const stamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     updateSyncBadge(`Sincronizado às ${stamp}`, 'ok');
     renderPeopleControls();
+    renderCardsConfigManager();
     renderAll();
     showToast(`Dados atualizados às ${stamp}.`, 'success');
   } catch (err) {
@@ -802,7 +874,7 @@ async function handleQuickAddSubmit(event) {
         valorParteTerceiro = valor;
       }
 
-      const firstCycle = computeStatementCycleForDate(data, 0, state.billing);
+      const firstCycle = computeStatementCycleForCard(conta, data, 0);
 
       const res = await postToBackend('createCardPurchase', {
         idempotency_key: baseKey,
@@ -828,8 +900,8 @@ async function handleQuickAddSubmit(event) {
       } else {
         showToast(
           parcelas > 1
-            ? `Compra parcelada em ${parcelas}x registrada (vence ${formatDateBR(firstCycle.dueDateIso)})!`
-            : `Compra no cartão registrada (vence ${formatDateBR(firstCycle.dueDateIso)})!`,
+            ? `Compra parcelada em ${parcelas}x (${conta}) — vence ${formatDateBR(firstCycle.dueDateIso)}!`
+            : `Compra no cartão ${conta} — vence ${formatDateBR(firstCycle.dueDateIso)}!`,
           'success'
         );
       }
@@ -1093,7 +1165,7 @@ function renderPortfolioChart(positions) {
   `;
 }
 
-function renderExecutiveHome(currentRow, faturasAbertas, terceiros, currentMonthYm) {
+function renderExecutiveHome(currentRow, faturasAbertas, parcelas, terceiros, currentMonthYm) {
   const actionsEl = document.getElementById('homeCurrentMonthActions');
   const summaryEl = document.getElementById('homeCurrentMonthSummary');
   const alertsEl = document.getElementById('homeUpcomingAlerts');
@@ -1122,12 +1194,21 @@ function renderExecutiveHome(currentRow, faturasAbertas, terceiros, currentMonth
 
   const alerts = [];
   if (faturasAbertas > 0) {
-    const sampleDue = computeStatementCycleForDate(new Date().toISOString().slice(0, 10), 0, state.billing);
+    const openCardsSet = new Set(
+      parcelas
+        .filter((p) => String(p.status_fatura || '').toUpperCase() !== 'PAGA')
+        .map((p) => canonicalizeAccount(p.cartao_id || 'Cartão'))
+    );
+    const cardSummaryDue = Array.from(openCardsSet).map((cName) => {
+      const cyc = computeStatementCycleForCard(cName, new Date().toISOString().slice(0, 10), 0);
+      return `${cName}: ${formatDateBR(cyc.dueDateIso)}`;
+    }).join(' • ');
+
     alerts.push(`
       <div class="list-item">
         <div>
-          <strong>Faturas de Cartão em Aberto</strong> <span class="badge badge-warn">Venc. ref. ${formatDateBR(sampleDue.dueDateIso)}</span>
-          <span class="month-detail-meta">Total acumulado de parcelas não pagas</span>
+          <strong>Faturas de Cartão em Aberto</strong> <span class="badge badge-warn">Em Aberto</span>
+          <span class="month-detail-meta">${cardSummaryDue || 'Parcelas em aberto'}</span>
         </div>
         <strong class="amt-neg">${formatBRL(faturasAbertas)}</strong>
       </div>
@@ -1331,12 +1412,8 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
     const desconto = Number(p.desconto_rateado || 0);
 
     if (!byMonth.has(monthKey)) {
-      const sampleDue = monthKey !== '0000-00'
-        ? computeStatementCycleForDate(`${monthKey}-10`, 0, state.billing)
-        : { dueDateIso: '' };
       byMonth.set(monthKey, {
         monthKey,
-        dueDateIso: sampleDue.dueDateIso,
         totalGeral: 0,
         totalMinhaParte: 0,
         totalTerceiros: 0,
@@ -1352,8 +1429,12 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
     mBucket.totalDesconto += desconto;
 
     if (!mBucket.cards.has(cardName)) {
+      const cyc = monthKey !== '0000-00'
+        ? computeStatementCycleForCard(cardName, `${monthKey}-10`, 0)
+        : { dueDateIso: '' };
       mBucket.cards.set(cardName, {
         cardName,
+        dueDateIso: cyc.dueDateIso,
         totalCartao: 0,
         minhaParteCartao: 0,
         terceirosCartao: 0,
@@ -1375,14 +1456,15 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
   detailContainer.innerHTML = sortedMonths.map((m, idx) => {
     const monthTitle = m.monthKey === '0000-00' ? 'SEM MÊS DEFINIDO' : formatMonthLabel(m.monthKey);
     const isOpen = m.monthKey === currentMonthYm || idx === 0;
-    const dueBadge = m.dueDateIso
-      ? `<span class="badge badge-info">Venc. ${formatDateBR(m.dueDateIso)}</span>`
-      : '';
     const cardsArr = Array.from(m.cards.values()).sort((a, b) =>
       a.cardName.localeCompare(b.cardName)
     );
 
     const cardsHtml = cardsArr.map((c) => {
+      const dueBadge = c.dueDateIso
+        ? `<span class="badge badge-info">Venc. ${formatDateBR(c.dueDateIso)}</span>`
+        : '';
+
       const itemsHtml = c.items.map((item) => {
         const descParcela = canonicalizeText(item.descricao_parcela || 'Compra');
         const numP = Number(item.num_parcela || 1);
@@ -1412,7 +1494,7 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
       return `
         <div class="card-subgroup">
           <div class="card-subgroup-header">
-            <span>${c.cardName}</span>
+            <span>${c.cardName} ${dueBadge}</span>
             <span>Fatura: ${formatBRL(c.totalCartao)}</span>
           </div>
           <div class="card-split-line">
@@ -1432,7 +1514,6 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
           <span class="month-header-left">
             <span class="month-chevron">▶</span>
             <span class="month-title">${monthTitle}</span>
-            ${dueBadge}
             <span class="month-count">${cardsArr.length} cartão(ões)</span>
           </span>
           <span class="month-balance-ok">Fatura Total: ${formatBRL(m.totalGeral)}</span>
@@ -1833,7 +1914,7 @@ function renderAll() {
   });
 
   const currentRow = scheduleRows.find((r) => r.mes === currentMonthYm) || scheduleRows[0] || null;
-  renderExecutiveHome(currentRow, faturasAbertas, terceiros, currentMonthYm);
+  renderExecutiveHome(currentRow, faturasAbertas, parcelas, terceiros, currentMonthYm);
 
   const projFullEl = document.getElementById('projecaoFullList');
   if (projFullEl && scheduleRows.length) {
@@ -1927,16 +2008,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const appearanceForm = document.getElementById('appearanceForm');
   if (appearanceForm) appearanceForm.addEventListener('submit', saveAppearance);
 
-  const billingForm = document.getElementById('billingCycleForm');
-  if (billingForm) billingForm.addEventListener('submit', saveBillingCycle);
-
-  ['cfgClosingMode', 'cfgClosingDay', 'cfgDueMode', 'cfgDueDays', 'cfgDueDay'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.addEventListener('input', updateBillingFormUI);
-      el.addEventListener('change', updateBillingFormUI);
-    }
-  });
+  const addCardRuleForm = document.getElementById('addCardRuleForm');
+  if (addCardRuleForm) addCardRuleForm.addEventListener('submit', handleAddCardRule);
 
   const filterMonth = document.getElementById('filterMovMonth');
   const filterType = document.getElementById('filterMovType');

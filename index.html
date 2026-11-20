@@ -123,7 +123,7 @@
       <section id="tab-cartoes" class="tab-panel">
         <div class="card">
           <h2>1. Faturas Detalhadas por Mês e por Cartão</h2>
-          <p class="muted" style="margin-bottom: 12px;">Cada cartão é exibido separadamente dentro do mês da fatura, mostrando vencimento, Minha Parte, Rateio e Saldo Restante de parcelamentos.</p>
+          <p class="muted" style="margin-bottom: 12px;">Cada cartão é exibido separadamente dentro do mês da fatura, com seu vencimento próprio, Minha Parte, Rateio e Saldo Restante de parcelamentos.</p>
           <div id="cartoesByMonthAndCardList" class="list-stack"></div>
         </div>
 
@@ -283,44 +283,28 @@
         </div>
 
         <div class="card">
-          <h2>Ciclo de Fechamento e Vencimento da Fatura</h2>
-          <p class="muted" style="margin-bottom: 12px;">Defina quando a fatura fecha (dia fixo ou último dia do mês) e quando vence (dia fixo ou X dias após o fechamento).</p>
-          <form id="billingCycleForm" class="form-stack">
-            <div class="form-row">
-              <label>
-                Fechamento da Fatura
-                <select id="cfgClosingMode">
-                  <option value="DAY">Dia fixo do mês (1 a 28)</option>
-                  <option value="LAST">Último dia do mês</option>
-                </select>
-              </label>
-              <label id="closingDayWrap">
-                Dia de Fechamento (1 a 28)
-                <input type="number" id="cfgClosingDay" min="1" max="28" value="25" />
-              </label>
-            </div>
+          <h2>Cartões e Regras de Fechamento / Vencimento</h2>
+          <p class="muted" style="margin-bottom: 12px;">Cadastre os cartões que você possui e configure individualmente quando cada um fecha e vence (dia fixo, último dia do mês ou dias após o fechamento).</p>
 
-            <div class="form-row">
-              <label>
-                Regra de Vencimento
-                <select id="cfgDueMode">
-                  <option value="DAYS_AFTER">Quantidade de dias após o fechamento</option>
-                  <option value="DAY">Dia fixo do mês (1 a 31)</option>
-                </select>
-              </label>
-              <label id="dueDaysWrap">
-                Dias à Frente do Fechamento
-                <input type="number" id="cfgDueDays" min="1" max="45" value="6" />
-              </label>
-              <label id="dueDayWrap" class="hidden">
-                Dia Fixo de Vencimento (1 a 31)
-                <input type="number" id="cfgDueDay" min="1" max="31" value="6" />
-              </label>
-            </div>
-
-            <div id="billingPreviewBox" class="alert-warn"></div>
-            <button type="submit" class="btn btn-primary">Salvar Regra de Fatura</button>
+          <form id="addCardRuleForm" class="form-row" style="margin-bottom: 14px;">
+            <input type="text" id="newCardName" list="suggestedCards" placeholder="Nome do cartão (ex.: Nubank, C6 Bank)" required />
+            <datalist id="suggestedCards">
+              <option value="Nubank"></option>
+              <option value="C6 Bank"></option>
+              <option value="Mercado Pago"></option>
+              <option value="BTG"></option>
+              <option value="Banco do Brasil"></option>
+              <option value="Caixa"></option>
+              <option value="Itaú"></option>
+              <option value="Bradesco"></option>
+              <option value="Santander"></option>
+              <option value="Inter"></option>
+              <option value="XP"></option>
+            </datalist>
+            <button type="submit" class="btn btn-primary">Adicionar Cartão</button>
           </form>
+
+          <div id="cardsConfigList" class="list-stack"></div>
         </div>
 
         <div class="card">
