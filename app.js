@@ -93,10 +93,6 @@ const state = {
   }
 };
 
-/* ==========================================================================
-   1. FORMATAÇÃO, TEMA E CICLO DE FATURA
-   ========================================================================== */
-
 function applyTheme(themeName) {
   const chosen = ALLOWED_THEMES.includes(themeName) ? themeName : 'blue-dark';
   state.theme = chosen;
@@ -289,10 +285,6 @@ function showToast(message, type = 'info') {
   }, 3800);
 }
 
-/* ==========================================================================
-   2. ESTADO, CONFIGURAÇÃO E COMUNICAÇÃO COM APPS SCRIPT
-   ========================================================================== */
-
 function loadSavedState() {
   try {
     const rawCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
@@ -426,14 +418,11 @@ async function postToBackend(action, payload) {
   return json.result;
 }
 
-/* ==========================================================================
-   3. EDIÇÃO E EXCLUSÃO (COM DELEGAÇÃO GLOBAL DE EVENTOS)
-   ========================================================================== */
-
 function openEditModal(config) {
   document.getElementById('editModalTitle').textContent = config.title || 'Editar Lançamento';
   document.getElementById('editKind').value = config.kind;
   document.getElementById('editId').value = config.id;
+  document.getElementById('editEntryModal').dataset.rowIndex = config.rowIndex || '';
   document.getElementById('editDesc').value = config.desc || '';
   document.getElementById('editDate').value = config.date || '';
   document.getElementById('editValor').value = config.valor !== undefined ? config.valor : '';
@@ -463,6 +452,7 @@ async function handleSaveEditSubmit(event) {
   try {
     const kind = document.getElementById('editKind').value;
     const id = document.getElementById('editId').value;
+    const rowIndex = document.getElementById('editEntryModal').dataset.rowIndex || '';
     const desc = canonicalizeText(document.getElementById('editDesc').value);
     const dt = document.getElementById('editDate').value;
     const val = Number(document.getElementById('editValor').value || 0);
@@ -488,6 +478,7 @@ async function handleSaveEditSubmit(event) {
     } else if (kind === 'THIRD_PARTY') {
       await postToBackend('updateThirdPartyEntry', {
         razao_id: id,
+        row_index: rowIndex,
         descricao: desc,
         pessoa_id: normalizePersonName(accOrPerson),
         valor: val,
@@ -518,11 +509,9 @@ async function handleSaveEditSubmit(event) {
 function handleGlobalDelegatedClicks(event) {
   const snap = state.snapshot || {};
   const movs = Array.isArray(snap.movimentacoes) ? snap.movimentacoes : [];
-  const parcelas = Array.isArray(snap.parcelas_cartao) ? snap.parcelas_cartao : [];
   const terceiros = Array.isArray(snap.terceiros_razao) ? snap.terceiros_razao : [];
   const investimentos = Array.isArray(snap.investimentos) ? snap.investimentos : [];
 
-  // 1. Excluir movimentação
   const delMovBtn = event.target.closest('[data-del-mov]');
   if (delMovBtn) {
     event.preventDefault();
@@ -537,7 +526,6 @@ function handleGlobalDelegatedClicks(event) {
     return;
   }
 
-  // 2. Editar movimentação
   const editMovBtn = event.target.closest('[data-edit-mov]');
   if (editMovBtn) {
     event.preventDefault();
@@ -559,7 +547,6 @@ function handleGlobalDelegatedClicks(event) {
     return;
   }
 
-  // 3. Excluir compra no cartão
   const delCardBtn = event.target.closest('[data-del-card-purchase]');
   if (delCardBtn) {
     event.preventDefault();
@@ -574,7 +561,6 @@ function handleGlobalDelegatedClicks(event) {
     return;
   }
 
-  // 4. Editar compra no cartão
   const editCardBtn = event.target.closest('[data-edit-card-purchase]');
   if (editCardBtn) {
     event.preventDefault();
@@ -592,21 +578,22 @@ function handleGlobalDelegatedClicks(event) {
     return;
   }
 
-  // 5. Excluir lançamento de terceiro
   const delThirdBtn = event.target.closest('[data-del-third]');
   if (delThirdBtn) {
     event.preventDefault();
     event.stopPropagation();
     const razaoId = delThirdBtn.dataset.delThird;
+    const rowIndex = delThirdBtn.dataset.delRowIndex || '';
     const label = delThirdBtn.dataset.delLabel || 'Lançamento de terceiro';
     const person = delThirdBtn.dataset.delPerson || '';
     const descRaw = delThirdBtn.dataset.delDescRaw || '';
-    const comp = delThirdBtn.dataset.delComp || '';
+    const comp = String(delThirdBtn.dataset.delComp || '').slice(0, 7);
     const val = delThirdBtn.dataset.delVal;
 
     if (!confirm(`Excluir o lançamento de terceiro "${label}"?`)) return;
     postToBackend('deleteThirdPartyEntry', {
       razao_id: razaoId,
+      row_index: rowIndex,
       pessoa_id: person,
       descricao: descRaw,
       competencia: comp,
@@ -617,18 +604,19 @@ function handleGlobalDelegatedClicks(event) {
     return;
   }
 
-  // 6. Editar lançamento de terceiro
   const editThirdBtn = event.target.closest('[data-edit-third]');
   if (editThirdBtn) {
     event.preventDefault();
     event.stopPropagation();
     const targetId = editThirdBtn.dataset.editThird;
+    const rowIndex = editThirdBtn.dataset.rowIndex || '';
     const t = terceiros.find((x, idx) => String(x.razao_id || x.id || `idx_${idx}`) === String(targetId));
     if (!t) return showToast('Lançamento de terceiro não encontrado.', 'error');
     openEditModal({
       title: 'Editar Lançamento de Terceiro',
       kind: 'THIRD_PARTY',
       id: t.razao_id || t.id || targetId,
+      rowIndex: t._rowIndex || rowIndex,
       desc: t.descricao || t.tipo_evento || '',
       valor: Number(t.valor_ajustado_cobrado || 0),
       accountOrPerson: normalizePersonName(t.pessoa_id || 'MAE'),
@@ -641,7 +629,6 @@ function handleGlobalDelegatedClicks(event) {
     return;
   }
 
-  // 7. Excluir ativo inteiro nos investimentos
   const delAssetBtn = event.target.closest('[data-del-asset]');
   if (delAssetBtn) {
     event.preventDefault();
@@ -655,7 +642,6 @@ function handleGlobalDelegatedClicks(event) {
     return;
   }
 
-  // 8. Excluir operação de investimento
   const delInvBtn = event.target.closest('[data-del-inv]');
   if (delInvBtn) {
     event.preventDefault();
@@ -670,7 +656,6 @@ function handleGlobalDelegatedClicks(event) {
     return;
   }
 
-  // 9. Editar operação de investimento
   const editInvBtn = event.target.closest('[data-edit-inv]');
   if (editInvBtn) {
     event.preventDefault();
@@ -691,10 +676,6 @@ function handleGlobalDelegatedClicks(event) {
     });
   }
 }
-
-/* ==========================================================================
-   4. CADASTRO DE PESSOAS, CARTÕES, LANÇAMENTOS E INVESTIMENTOS
-   ========================================================================== */
 
 function syncPeopleListFromData() {
   const hiddenSet = new Set(state.hiddenPeople || []);
@@ -1164,10 +1145,6 @@ async function handleUpdateQuotes() {
     showToast(`Erro nas cotações: ${err.message}`, 'error');
   }
 }
-
-/* ==========================================================================
-   5. RENDERIZAÇÃO
-   ========================================================================== */
 
 function getChartColorsForCurrentTheme() {
   const t = state.theme;
@@ -1654,16 +1631,18 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
     const rowsHtml = g.items.map((t) => {
       const desc = canonicalizeText(t.descricao || t.tipo_evento || 'Lançamento');
       const person = normalizePersonName(t.pessoa_id || '-');
+      const compYm = String(t.competencia || '').slice(0, 7);
+      const rowIndex = t._rowIndex || '';
       return `
         <div class="month-detail-row">
           <div>
             <strong>${desc}</strong> ${getStatusBadge(t.status)}
-            <span class="month-detail-meta">Pessoa: ${person} • Competência: ${formatMonthShort(t.competencia)}</span>
+            <span class="month-detail-meta">Pessoa: ${person} • Competência: ${formatMonthShort(compYm)}</span>
           </div>
           <div class="month-detail-right">
             <strong>${formatBRL(t.valor_ajustado_cobrado)}</strong>
-            <button type="button" class="btn-edit" data-edit-third="${t._uiKey}" title="Editar">✏️</button>
-            <button type="button" class="btn-delete" data-del-third="${t.razao_id || t.id || ''}" data-del-label="${desc}" data-del-person="${person}" data-del-desc-raw="${t.descricao || ''}" data-del-comp="${t.competencia || ''}" data-del-val="${Number(t.valor_ajustado_cobrado || 0)}" title="Excluir">🗑️</button>
+            <button type="button" class="btn-edit" data-edit-third="${t._uiKey}" data-row-index="${rowIndex}" title="Editar">✏️</button>
+            <button type="button" class="btn-delete" data-del-third="${t.razao_id || t.id || ''}" data-del-row-index="${rowIndex}" data-del-label="${desc}" data-del-person="${person}" data-del-desc-raw="${t.descricao || ''}" data-del-comp="${compYm}" data-del-val="${Number(t.valor_ajustado_cobrado || 0)}" title="Excluir">🗑️</button>
           </div>
         </div>
       `;
@@ -1970,10 +1949,6 @@ function renderAll() {
     });
   });
 }
-
-/* ==========================================================================
-   6. INICIALIZAÇÃO E LISTENERS
-   ========================================================================== */
 
 function switchTab(tabName) {
   document.querySelectorAll('.nav-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tabName));
