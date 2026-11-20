@@ -556,7 +556,7 @@ function handleGlobalDelegatedClicks(event) {
     if (!compraId) return showToast('ID da compra no cartão não encontrado.', 'error');
     if (!confirm(`Excluir "${label}" e todas as parcelas/rateios?`)) return;
     postToBackend('deleteCardPurchase', { compra_id: compraId })
-      .then(() => { showToast('Compra no cartão excluída.', 'success'); return syncFromBackend(); })
+      .then(() => { showToast('Compra no cartão excluída em todas as abas.', 'success'); return syncFromBackend(); })
       .catch((err) => showToast(`Erro ao excluir compra: ${err.message}`, 'error'));
     return;
   }
@@ -1040,7 +1040,12 @@ async function handleQuickAddSubmit(event) {
         competencia_inicial: firstCycle.competencia,
         data_vencimento_inicial: firstCycle.dueDateIso
       });
-      showToast('Compra no cartão registrada!', 'success');
+      showToast(
+        pessoaId
+          ? `Compra no cartão lançada e enviada para cobrança de ${pessoaId}!`
+          : 'Compra no cartão registrada!',
+        'success'
+      );
     } else {
       const isRecorrente = document.getElementById('txIsRecorrente').checked;
       const totalMeses = isRecorrente
@@ -1315,6 +1320,7 @@ function renderExecutiveHome(currentRow, movs, faturasAbertas, parcelas, terceir
   });
 
   Object.entries(pendingByPerson).forEach(([person, val]) => {
+    if (val <= 0) return;
     alerts.push(`
       <div class="list-item">
         <div>
