@@ -26,33 +26,15 @@ const DEFAULT_CARDS_CONFIG = {
 };
 
 const MONTH_NAMES_FULL = {
-  '01': 'JANEIRO',
-  '02': 'FEVEREIRO',
-  '03': 'MARÇO',
-  '04': 'ABRIL',
-  '05': 'MAIO',
-  '06': 'JUNHO',
-  '07': 'JULHO',
-  '08': 'AGOSTO',
-  '09': 'SETEMBRO',
-  '10': 'OUTUBRO',
-  '11': 'NOVEMBRO',
-  '12': 'DEZEMBRO'
+  '01': 'JANEIRO', '02': 'FEVEREIRO', '03': 'MARÇO', '04': 'ABRIL',
+  '05': 'MAIO', '06': 'JUNHO', '07': 'JULHO', '08': 'AGOSTO',
+  '09': 'SETEMBRO', '10': 'OUTUBRO', '11': 'NOVEMBRO', '12': 'DEZEMBRO'
 };
 
 const MONTH_NAMES_SHORT = {
-  '01': 'Jan',
-  '02': 'Fev',
-  '03': 'Mar',
-  '04': 'Abr',
-  '05': 'Mai',
-  '06': 'Jun',
-  '07': 'Jul',
-  '08': 'Ago',
-  '09': 'Set',
-  '10': 'Out',
-  '11': 'Nov',
-  '12': 'Dez'
+  '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr',
+  '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Ago',
+  '09': 'Set', '10': 'Out', '11': 'Nov', '12': 'Dez'
 };
 
 const CANONICAL_TEXT_MAP = {
@@ -81,31 +63,16 @@ const CANONICAL_TEXT_MAP = {
 };
 
 const CANONICAL_ACCOUNT_MAP = {
-  nubank: 'Nubank',
-  nu: 'Nubank',
-  nb: 'Nubank',
-  'c6 bank': 'C6 Bank',
-  c6: 'C6 Bank',
-  'mercado pago': 'Mercado Pago',
-  mp: 'Mercado Pago',
-  btg: 'BTG',
-  'btg pactual': 'BTG',
-  'banco do brasil': 'Banco do Brasil',
-  bb: 'Banco do Brasil',
-  caixa: 'Caixa',
-  'caixa economica': 'Caixa',
-  'caixa econômica': 'Caixa',
-  itau: 'Itaú',
-  itaú: 'Itaú',
-  bradesco: 'Bradesco',
-  santander: 'Santander',
-  inter: 'Inter',
-  sicredi: 'Sicredi',
-  banrisul: 'Banrisul',
-  picpay: 'PicPay',
-  xp: 'XP',
-  dinheiro: 'Dinheiro',
-  carteira: 'Dinheiro'
+  nubank: 'Nubank', nu: 'Nubank', nb: 'Nubank',
+  'c6 bank': 'C6 Bank', c6: 'C6 Bank',
+  'mercado pago': 'Mercado Pago', mp: 'Mercado Pago',
+  btg: 'BTG', 'btg pactual': 'BTG',
+  'banco do brasil': 'Banco do Brasil', bb: 'Banco do Brasil',
+  caixa: 'Caixa', 'caixa economica': 'Caixa', 'caixa econômica': 'Caixa',
+  itau: 'Itaú', itaú: 'Itaú',
+  bradesco: 'Bradesco', santander: 'Santander', inter: 'Inter',
+  sicredi: 'Sicredi', banrisul: 'Banrisul', picpay: 'PicPay',
+  xp: 'XP', dinheiro: 'Dinheiro', carteira: 'Dinheiro'
 };
 
 const state = {
@@ -127,7 +94,7 @@ const state = {
 };
 
 /* ==========================================================================
-   1. TEMA, REGRAS POR CARTÃO, NORMALIZAÇÃO E FORMATAÇÃO
+   1. FORMATAÇÃO, TEMA E CICLO DE FATURA
    ========================================================================== */
 
 function applyTheme(themeName) {
@@ -135,7 +102,6 @@ function applyTheme(themeName) {
   state.theme = chosen;
   document.body.setAttribute('data-theme', chosen);
   localStorage.setItem(STORAGE_KEYS.THEME, chosen);
-
   const selectEl = document.getElementById('cfgTheme');
   if (selectEl) selectEl.value = chosen;
 }
@@ -161,22 +127,15 @@ function getClosingDateForYearMonth(year, month1To12, rule) {
 function computeStatementCycleForCard(cardName, dateIso, installmentIndex0 = 0) {
   const rule = getCardRule(cardName);
   const parts = String(dateIso || '').slice(0, 10).split('-').map(Number);
-  if (parts.length !== 3) {
-    return { competencia: '', dueDateIso: '', closingDateIso: '' };
-  }
+  if (parts.length !== 3) return { competencia: '', dueDateIso: '', closingDateIso: '' };
 
-  const baseYear = parts[0];
-  const baseMonthIdx = parts[1] - 1 + installmentIndex0;
-  const purchaseDate = new Date(Date.UTC(baseYear, baseMonthIdx, parts[2]));
-
+  const purchaseDate = new Date(Date.UTC(parts[0], parts[1] - 1 + installmentIndex0, parts[2]));
   const pYear = purchaseDate.getUTCFullYear();
   const pMonth = purchaseDate.getUTCMonth() + 1;
   const pDay = purchaseDate.getUTCDate();
 
   const closingThisMonth = getClosingDateForYearMonth(pYear, pMonth, rule);
-  const closingDayThisMonth = closingThisMonth.getUTCDate();
-
-  const closingDate = pDay <= closingDayThisMonth
+  const closingDate = pDay <= closingThisMonth.getUTCDate()
     ? closingThisMonth
     : getClosingDateForYearMonth(pYear, pMonth + 1, rule);
 
@@ -202,151 +161,8 @@ function computeStatementCycleForCard(cardName, dateIso, installmentIndex0 = 0) 
   };
 }
 
-function syncCardsConfigFromData() {
-  const parcelas = (state.snapshot && Array.isArray(state.snapshot.parcelas_cartao))
-    ? state.snapshot.parcelas_cartao
-    : [];
-  parcelas.forEach((p) => {
-    const cName = canonicalizeAccount(p.cartao_id || '');
-    if (cName && cName !== 'Sem Conta' && !state.cardsConfig[cName]) {
-      state.cardsConfig[cName] = { ...DEFAULT_CARD_RULE };
-    }
-  });
-  localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
-}
-
-function renderCardsConfigManager() {
-  syncCardsConfigFromData();
-  const container = document.getElementById('cardsConfigList');
-  if (!container) return;
-
-  const cardNames = Object.keys(state.cardsConfig).sort();
-  if (!cardNames.length) {
-    container.innerHTML = '<p class="muted">Nenhum cartão cadastrado ainda. Adicione um cartão acima.</p>';
-    return;
-  }
-
-  container.innerHTML = cardNames.map((name) => {
-    const rule = getCardRule(name);
-    const sample = computeStatementCycleForCard(name, '2026-11-20', 0);
-    const fechaTxt = rule.closingMode === 'LAST' ? 'último dia do mês' : `dia ${rule.closingDay}`;
-    const venceTxt = rule.dueMode === 'DAY' ? `dia ${rule.dueDay}` : `${rule.dueDays} dias após fechamento`;
-
-    return `
-      <div class="card-rule-box" data-card-name="${name}">
-        <div class="card-rule-top">
-          <div>
-            <strong>${name}</strong>
-            <span class="month-detail-meta">Fecha: ${fechaTxt} • Vence: ${venceTxt} • Ex. 20/11/2026 → vence ${formatDateBR(sample.dueDateIso)} (${sample.competencia})</span>
-          </div>
-          <button type="button" class="btn-delete" data-remove-card="${name}" title="Remover cartão">🗑️</button>
-        </div>
-
-        <div class="card-rule-grid">
-          <label>
-            Fechamento
-            <select class="rule-closing-mode">
-              <option value="DAY" ${rule.closingMode === 'DAY' ? 'selected' : ''}>Dia fixo (1 a 28)</option>
-              <option value="LAST" ${rule.closingMode === 'LAST' ? 'selected' : ''}>Último dia do mês</option>
-            </select>
-          </label>
-
-          <label class="rule-closing-day-wrap ${rule.closingMode === 'LAST' ? 'hidden' : ''}">
-            Dia Fechamento (1-28)
-            <input type="number" class="rule-closing-day" min="1" max="28" value="${rule.closingDay}" />
-          </label>
-
-          <label>
-            Regra Vencimento
-            <select class="rule-due-mode">
-              <option value="DAYS_AFTER" ${rule.dueMode === 'DAYS_AFTER' ? 'selected' : ''}>Dias após fechamento</option>
-              <option value="DAY" ${rule.dueMode === 'DAY' ? 'selected' : ''}>Dia fixo do mês</option>
-            </select>
-          </label>
-
-          <label class="rule-due-days-wrap ${rule.dueMode !== 'DAYS_AFTER' ? 'hidden' : ''}">
-            Dias à Frente
-            <input type="number" class="rule-due-days" min="1" max="45" value="${rule.dueDays}" />
-          </label>
-
-          <label class="rule-due-day-wrap ${rule.dueMode !== 'DAY' ? 'hidden' : ''}">
-            Dia Fixo Venc. (1-31)
-            <input type="number" class="rule-due-day" min="1" max="31" value="${rule.dueDay}" />
-          </label>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  container.querySelectorAll('.card-rule-box').forEach((box) => {
-    const cName = box.dataset.cardName;
-    const onRuleChange = () => {
-      const closingMode = box.querySelector('.rule-closing-mode').value;
-      const closingDay = Math.min(28, Math.max(1, Number(box.querySelector('.rule-closing-day').value || 25)));
-      const dueMode = box.querySelector('.rule-due-mode').value;
-      const dueDays = Math.min(45, Math.max(1, Number(box.querySelector('.rule-due-days').value || 6)));
-      const dueDay = Math.min(31, Math.max(1, Number(box.querySelector('.rule-due-day').value || 6)));
-
-      state.cardsConfig[cName] = { closingMode, closingDay, dueMode, dueDays, dueDay };
-      localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
-      renderCardsConfigManager();
-      renderAll();
-      updateCardCyclePreviewInModal();
-    };
-
-    box.querySelectorAll('select, input').forEach((ctrl) => {
-      ctrl.addEventListener('change', onRuleChange);
-    });
-  });
-
-  container.querySelectorAll('[data-remove-card]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.removeCard;
-      delete state.cardsConfig[target];
-      localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
-      renderCardsConfigManager();
-      renderAll();
-      showToast(`Cartão "${target}" removido da configuração.`, 'info');
-    });
-  });
-}
-
-function handleAddCardRule(event) {
-  event.preventDefault();
-  const input = document.getElementById('newCardName');
-  const cardName = canonicalizeAccount(input.value);
-  if (!cardName) return;
-
-  if (!state.cardsConfig[cardName]) {
-    state.cardsConfig[cardName] = { ...DEFAULT_CARD_RULE };
-    localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
-  }
-  input.value = '';
-  renderCardsConfigManager();
-  renderAll();
-  showToast(`Cartão "${cardName}" adicionado. Ajuste fechamento e vencimento abaixo.`, 'success');
-}
-
-function updateCardCyclePreviewInModal() {
-  const previewEl = document.getElementById('cardCyclePreview');
-  const tipo = document.getElementById('txTipo')?.value;
-  if (!previewEl || tipo !== 'COMPRA_CARTAO') return;
-
-  const cardName = resolveSelectedAccount();
-  const dt = document.getElementById('txData')?.value || new Date().toISOString().slice(0, 10);
-  const parcelas = Math.max(1, parseInt(document.getElementById('txParcelas')?.value || '1', 10));
-  const firstCycle = computeStatementCycleForCard(cardName, dt, 0);
-  const lastCycle = computeStatementCycleForCard(cardName, dt, parcelas - 1);
-
-  previewEl.textContent = parcelas > 1
-    ? `${cardName}: 1ª parcela vence ${formatDateBR(firstCycle.dueDateIso)} (${firstCycle.competencia}) • ${parcelas}ª em ${formatDateBR(lastCycle.dueDateIso)} (${lastCycle.competencia}).`
-    : `${cardName}: fatura ${firstCycle.competencia} • vencimento estimado ${formatDateBR(firstCycle.dueDateIso)}.`;
-}
-
 function stripDiacritics(str) {
-  return String(str || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+  return String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 function cleanSpaces(str) {
@@ -357,10 +173,7 @@ function canonicalizeText(text) {
   const cleaned = cleanSpaces(text);
   if (!cleaned) return '';
   const key = stripDiacritics(cleaned).toLowerCase();
-  if (CANONICAL_TEXT_MAP[key]) {
-    return CANONICAL_TEXT_MAP[key];
-  }
-  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return CANONICAL_TEXT_MAP[key] || (cleaned.charAt(0).toUpperCase() + cleaned.slice(1));
 }
 
 function canonicalizeCategory(cat) {
@@ -378,11 +191,8 @@ function canonicalizeAccount(acc) {
 }
 
 function normalizePersonName(name) {
-  const base = stripDiacritics(cleanSpaces(name))
-    .toUpperCase()
-    .replace(/\s+/g, '_');
-  if (base === 'MAE' || base === 'MINHA_MAE') return 'MAE';
-  return base;
+  const base = stripDiacritics(cleanSpaces(name)).toUpperCase().replace(/\s+/g, '_');
+  return (base === 'MAE' || base === 'MINHA_MAE') ? 'MAE' : base;
 }
 
 function normalizeTicker(ticker) {
@@ -390,8 +200,7 @@ function normalizeTicker(ticker) {
 }
 
 function formatBRL(value) {
-  const num = Number(value || 0);
-  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 function formatDateBR(isoOrDate) {
@@ -399,41 +208,29 @@ function formatDateBR(isoOrDate) {
   if (!raw) return '--/--/----';
   const ymd = raw.slice(0, 10);
   const parts = ymd.split('-');
-  if (parts.length === 3 && parts[0].length === 4) {
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  }
-  return ymd;
+  return (parts.length === 3 && parts[0].length === 4) ? `${parts[2]}/${parts[1]}/${parts[0]}` : ymd;
 }
 
 function formatMonthLabel(ym) {
   const cleanYm = String(ym || '').slice(0, 7);
   const parts = cleanYm.split('-');
   if (parts.length !== 2) return cleanYm || 'SEM MÊS';
-  const nome = MONTH_NAMES_FULL[parts[1]] || parts[1];
-  return `${nome} / ${parts[0]}`;
+  return `${MONTH_NAMES_FULL[parts[1]] || parts[1]} / ${parts[0]}`;
 }
 
 function formatMonthShort(ym) {
   const cleanYm = String(ym || '').slice(0, 7);
   const parts = cleanYm.split('-');
   if (parts.length !== 2) return cleanYm;
-  const nome = MONTH_NAMES_SHORT[parts[1]] || parts[1];
-  return `${nome}/${parts[0].slice(2)}`;
+  return `${MONTH_NAMES_SHORT[parts[1]] || parts[1]}/${parts[0].slice(2)}`;
 }
 
 function addMonthsToDateIso(dateIso, monthsToAdd) {
   const parts = String(dateIso || '').slice(0, 10).split('-').map(Number);
   if (parts.length !== 3) return dateIso;
-  const year = parts[0];
-  const monthIdx = parts[1] - 1 + monthsToAdd;
-  const day = parts[2];
-
-  const targetDate = new Date(Date.UTC(year, monthIdx, 1));
-  const maxDaysInTarget = new Date(
-    Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() + 1, 0)
-  ).getUTCDate();
-  targetDate.setUTCDate(Math.min(day, maxDaysInTarget));
-
+  const targetDate = new Date(Date.UTC(parts[0], parts[1] - 1 + monthsToAdd, 1));
+  const maxDays = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() + 1, 0)).getUTCDate();
+  targetDate.setUTCDate(Math.min(parts[2], maxDays));
   return targetDate.toISOString().slice(0, 10);
 }
 
@@ -475,67 +272,57 @@ function toggleMonthReconciled(ym) {
 function renderReconcileButton(ym) {
   if (!ym || ym === '0000-00') return '';
   const checked = isMonthReconciled(ym);
-  return `<button type="button" class="recon-btn ${checked ? 'checked' : 'open'}" data-recon-ym="${ym}" title="Alternar status de conciliação mensal">${checked ? 'Conferido ✓' : 'Em aberto'}</button>`;
+  return `<button type="button" class="recon-btn ${checked ? 'checked' : 'open'}" data-recon-ym="${ym}">${checked ? 'Conferido ✓' : 'Em aberto'}</button>`;
 }
 
 function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
-
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
   container.appendChild(toast);
-
   setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transition = 'opacity 0.2s';
     setTimeout(() => toast.remove(), 220);
-  }, 3600);
+  }, 3800);
 }
 
 /* ==========================================================================
-   2. ESTADO LOCAL, CONFIGURAÇÃO E SINCRONIZAÇÃO
+   2. ESTADO, CONFIGURAÇÃO E COMUNICAÇÃO COM APPS SCRIPT
    ========================================================================== */
 
 function loadSavedState() {
   try {
     const rawCfg = localStorage.getItem(STORAGE_KEYS.CONFIG);
-    if (rawCfg) {
-      state.config = Object.assign(state.config, JSON.parse(rawCfg));
-    }
+    if (rawCfg) state.config = Object.assign(state.config, JSON.parse(rawCfg));
+
     const rawCache = localStorage.getItem(STORAGE_KEYS.CACHE);
-    if (rawCache) {
-      state.snapshot = JSON.parse(rawCache);
-    }
+    if (rawCache) state.snapshot = JSON.parse(rawCache);
+
     const rawPeople = localStorage.getItem(STORAGE_KEYS.PEOPLE);
     if (rawPeople) {
-      const parsedPeople = JSON.parse(rawPeople);
-      if (Array.isArray(parsedPeople)) {
-        state.people = parsedPeople;
-      }
+      const parsed = JSON.parse(rawPeople);
+      if (Array.isArray(parsed)) state.people = parsed;
     }
-    const rawHiddenPeople = localStorage.getItem(STORAGE_KEYS.HIDDEN_PEOPLE);
-    if (rawHiddenPeople) {
-      state.hiddenPeople = JSON.parse(rawHiddenPeople) || [];
-    }
+
+    const rawHidden = localStorage.getItem(STORAGE_KEYS.HIDDEN_PEOPLE);
+    if (rawHidden) state.hiddenPeople = JSON.parse(rawHidden) || [];
+
     const rawRecon = localStorage.getItem(STORAGE_KEYS.RECONCILED);
-    if (rawRecon) {
-      state.reconciledMonths = JSON.parse(rawRecon) || {};
-    }
+    if (rawRecon) state.reconciledMonths = JSON.parse(rawRecon) || {};
+
     const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
-    if (savedTheme && ALLOWED_THEMES.includes(savedTheme)) {
-      state.theme = savedTheme;
-    }
+    if (savedTheme && ALLOWED_THEMES.includes(savedTheme)) state.theme = savedTheme;
+
     const rawCards = localStorage.getItem(STORAGE_KEYS.CARDS_CONFIG);
     if (rawCards) {
       const parsedCards = JSON.parse(rawCards);
-      if (parsedCards && typeof parsedCards === 'object') {
-        state.cardsConfig = parsedCards;
-      }
+      if (parsedCards && typeof parsedCards === 'object') state.cardsConfig = parsedCards;
     }
   } catch (err) {
-    console.warn('Falha ao carregar armazenamento local:', err);
+    console.error('Erro ao carregar localStorage:', err);
   }
 
   applyTheme(state.theme);
@@ -547,11 +334,11 @@ function loadSavedState() {
   if (keyInput) keyInput.value = state.config.apiKey || '';
 
   const today = new Date().toISOString().slice(0, 10);
-  const dateInput = document.getElementById('txData');
-  if (dateInput && !dateInput.value) dateInput.value = today;
+  const txData = document.getElementById('txData');
+  if (txData && !txData.value) txData.value = today;
 
-  const invDateInput = document.getElementById('invData');
-  if (invDateInput && !invDateInput.value) invDateInput.value = today;
+  const invData = document.getElementById('invData');
+  if (invData && !invData.value) invData.value = today;
 
   if (state.snapshot && state.snapshot.last_sync_ts) {
     updateSyncBadge('Cache local carregado • Clique em Sincronizar', 'ok');
@@ -559,31 +346,6 @@ function loadSavedState() {
 
   renderPeopleControls();
   renderAll();
-}
-
-function saveAppearance(event) {
-  event.preventDefault();
-  const themeVal = document.getElementById('cfgTheme').value;
-  applyTheme(themeVal);
-  renderAll();
-  showToast('Tema atualizado com sucesso.', 'success');
-}
-
-function saveConfig(event) {
-  event.preventDefault();
-  const apiUrl = document.getElementById('cfgApiUrl').value.trim();
-  const apiKey = document.getElementById('cfgApiKey').value.trim();
-
-  if (!apiUrl || !apiKey) {
-    showToast('Preencha a URL do Web App e a chave API_ACCESS_KEY.', 'warn');
-    return;
-  }
-
-  state.config = { apiUrl, apiKey };
-  localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(state.config));
-  updateSyncBadge('Configuração salva • Sincronizando...', 'ok');
-  showToast('Conexão salva neste navegador.', 'success');
-  syncFromBackend();
 }
 
 function updateSyncBadge(text, variant = '') {
@@ -600,16 +362,21 @@ async function syncFromBackend() {
     return;
   }
 
-  updateSyncBadge('Sincronizando com Google Sheets...', 'warn');
+  updateSyncBadge('Sincronizando...', 'warn');
   try {
     const sep = state.config.apiUrl.indexOf('?') === -1 ? '?' : '&';
     const endpoint = `${state.config.apiUrl}${sep}action=sync&api_key=${encodeURIComponent(state.config.apiKey)}`;
-
     const resp = await fetch(endpoint);
-    const json = await resp.json();
+    const text = await resp.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (parseErr) {
+      throw new Error(`Resposta inválida do Apps Script: ${text.slice(0, 140)}`);
+    }
 
     if (!json.ok) {
-      throw new Error(json.error || 'Erro ao sincronizar com o Apps Script.');
+      throw new Error(json.error || 'Erro ao sincronizar.');
     }
 
     if (json.data) {
@@ -622,17 +389,17 @@ async function syncFromBackend() {
     renderPeopleControls();
     renderCardsConfigManager();
     renderAll();
-    showToast(`Dados atualizados às ${stamp}.`, 'success');
+    showToast(`Sincronizado às ${stamp}.`, 'success');
   } catch (err) {
-    updateSyncBadge('Falha na sincronização (usando cache local)', 'warn');
-    console.error(err);
+    updateSyncBadge('Falha na sincronização (cache local)', 'warn');
+    console.error('syncFromBackend error:', err);
     showToast(`Erro ao sincronizar: ${err.message}`, 'error');
   }
 }
 
 async function postToBackend(action, payload) {
   if (!state.config.apiUrl || !state.config.apiKey) {
-    throw new Error('Configure a URL e a chave em Configurações antes de lançar.');
+    throw new Error('Configure a URL e a chave em Configurações antes de alterar dados.');
   }
 
   const resp = await fetch(state.config.apiUrl, {
@@ -645,446 +412,23 @@ async function postToBackend(action, payload) {
     })
   });
 
-  const json = await resp.json();
+  const text = await resp.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`Resposta inesperada do servidor: ${text.slice(0, 140)}`);
+  }
+
   if (!json.ok) {
-    throw new Error(json.error || 'Falha ao gravar no backend.');
+    throw new Error(json.error || 'Erro ao processar ação no Apps Script.');
   }
   return json.result;
 }
 
 /* ==========================================================================
-   3. CADASTRO/EXCLUSÃO DE PESSOAS E REGRAS DO MODAL (+ LANÇAR)
+   3. EDIÇÃO E EXCLUSÃO (COM DELEGAÇÃO GLOBAL DE EVENTOS)
    ========================================================================== */
-
-function syncPeopleListFromData() {
-  const hiddenSet = new Set(state.hiddenPeople || []);
-  const set = new Set();
-
-  if (Array.isArray(state.people)) {
-    state.people.forEach((p) => {
-      const n = normalizePersonName(p);
-      if (n && n !== 'EU' && !hiddenSet.has(n)) set.add(n);
-    });
-  }
-
-  const terceiros = (state.snapshot && Array.isArray(state.snapshot.terceiros_razao))
-    ? state.snapshot.terceiros_razao
-    : [];
-  terceiros.forEach((t) => {
-    const n = normalizePersonName(t.pessoa_id);
-    if (n && n !== 'EU' && !hiddenSet.has(n)) set.add(n);
-  });
-
-  state.people = Array.from(set);
-  localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
-}
-
-function handleRemovePerson(personName) {
-  const clean = normalizePersonName(personName);
-  const ok = confirm(`Remover "${clean}" da lista de pessoas?`);
-  if (!ok) return;
-
-  state.people = state.people.filter((p) => p !== clean);
-  if (!state.hiddenPeople.includes(clean)) {
-    state.hiddenPeople.push(clean);
-  }
-  localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
-  localStorage.setItem(STORAGE_KEYS.HIDDEN_PEOPLE, JSON.stringify(state.hiddenPeople));
-
-  if (state.selectedPersonFilter === clean) {
-    state.selectedPersonFilter = 'ALL';
-  }
-  renderPeopleControls();
-  renderAll();
-  showToast(`Pessoa "${clean}" removida.`, 'info');
-}
-
-function renderPeopleControls() {
-  syncPeopleListFromData();
-
-  const chipsEl = document.getElementById('peopleChips');
-  if (chipsEl) {
-    const allChip = `<button type="button" class="chip ${state.selectedPersonFilter === 'ALL' ? 'active' : ''}" data-person="ALL">Todos</button>`;
-    const personChips = state.people
-      .map((p) => `
-        <span class="chip chip-with-del ${state.selectedPersonFilter === p ? 'active' : ''}" data-person="${p}">
-          <span>${p}</span>
-          <button type="button" class="chip-del-x" data-del-person="${p}" title="Remover pessoa">✕</button>
-        </span>
-      `)
-      .join('');
-    chipsEl.innerHTML = allChip + personChips;
-
-    chipsEl.querySelectorAll('[data-person]').forEach((chip) => {
-      chip.addEventListener('click', (e) => {
-        if (e.target.closest('[data-del-person]')) return;
-        state.selectedPersonFilter = chip.dataset.person;
-        renderPeopleControls();
-        renderAll();
-      });
-    });
-
-    chipsEl.querySelectorAll('[data-del-person]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleRemovePerson(btn.dataset.delPerson);
-      });
-    });
-  }
-
-  const badge = document.getElementById('terceirosActiveFilterBadge');
-  if (badge) {
-    badge.textContent = state.selectedPersonFilter === 'ALL'
-      ? 'Exibindo: Todos'
-      : `Filtrado por: ${state.selectedPersonFilter}`;
-  }
-
-  const respSelect = document.getElementById('txResponsavel');
-  if (respSelect) {
-    const currentVal = respSelect.value;
-    const baseOptions = [
-      { value: 'EU', label: 'Apenas Eu' },
-      { value: 'MAE_COMPARTILHADO', label: 'Compartilhado com Mãe' }
-    ];
-    state.people.forEach((person) => {
-      baseOptions.push({ value: person, label: `Terceiro: ${person}` });
-    });
-    baseOptions.push({ value: '__NOVA_PESSOA__', label: '+ Cadastrar nova pessoa...' });
-
-    respSelect.innerHTML = baseOptions
-      .map((opt) => `<option value="${opt.value}">${opt.label}</option>`)
-      .join('');
-
-    if (currentVal && Array.from(respSelect.options).some((o) => o.value === currentVal)) {
-      respSelect.value = currentVal;
-    }
-  }
-}
-
-function handleAddPerson(event) {
-  event.preventDefault();
-  const input = document.getElementById('newPersonName');
-  const clean = normalizePersonName(input.value);
-  if (!clean) return;
-
-  state.hiddenPeople = state.hiddenPeople.filter((p) => p !== clean);
-  localStorage.setItem(STORAGE_KEYS.HIDDEN_PEOPLE, JSON.stringify(state.hiddenPeople));
-
-  if (!state.people.includes(clean)) {
-    state.people.push(clean);
-    localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
-  }
-  input.value = '';
-  renderPeopleControls();
-  renderAll();
-  showToast(`Pessoa "${clean}" adicionada.`, 'success');
-}
-
-function evaluateSplitWarning() {
-  const tipo = document.getElementById('txTipo').value;
-  const resp = document.getElementById('txResponsavel').value;
-  const warnBox = document.getElementById('splitAlert');
-  const total = Number(document.getElementById('txValor').value || 0);
-  const minhaRaw = document.getElementById('txMinhaParte').value;
-  const desc = Number(document.getElementById('txDesconto').value || 0);
-
-  if (tipo !== 'COMPRA_CARTAO' || resp !== 'MAE_COMPARTILHADO' || total <= 0) {
-    warnBox.classList.add('hidden');
-    warnBox.textContent = '';
-    return;
-  }
-
-  if (minhaRaw !== '') {
-    const minha = Number(minhaRaw);
-    const maeBruta = Math.max(0, total - minha);
-    const maeLiquida = Math.max(0, maeBruta - desc);
-    if (desc > 0 || maeBruta !== maeLiquida) {
-      warnBox.classList.remove('hidden');
-      warnBox.textContent =
-        `Total: ${formatBRL(total)} | Sua parte: ${formatBRL(minha)} | Parte bruta Mãe: ${formatBRL(maeBruta)} | Desconto: ${formatBRL(desc)} | Líquido a cobrar da Mãe: ${formatBRL(maeLiquida)}.`;
-      return;
-    }
-  }
-
-  warnBox.classList.add('hidden');
-  warnBox.textContent = '';
-}
-
-function updateQuickFormVisibility() {
-  const tipo = document.getElementById('txTipo').value;
-  const resp = document.getElementById('txResponsavel').value;
-  const contaVal = document.getElementById('txConta').value;
-  const isRec = document.getElementById('txIsRecorrente').checked;
-
-  const cardBox = document.getElementById('cardExtraFields');
-  const splitBox = document.getElementById('splitFields');
-  const recurrenceBox = document.getElementById('recurrenceBox');
-  const recurrenceFields = document.getElementById('recurrenceFields');
-  const novaPessoaInput = document.getElementById('txNovaPessoa');
-  const outroBancoInput = document.getElementById('txOutroBanco');
-
-  if (tipo === 'COMPRA_CARTAO') {
-    cardBox.classList.remove('hidden');
-    recurrenceBox.classList.add('hidden');
-    updateCardCyclePreviewInModal();
-  } else {
-    cardBox.classList.add('hidden');
-    recurrenceBox.classList.remove('hidden');
-  }
-
-  if (recurrenceFields) {
-    recurrenceFields.classList.toggle('hidden', !isRec);
-  }
-
-  if (tipo === 'COMPRA_CARTAO' && resp === 'MAE_COMPARTILHADO') {
-    splitBox.classList.remove('hidden');
-  } else {
-    splitBox.classList.add('hidden');
-  }
-
-  if (novaPessoaInput) {
-    novaPessoaInput.classList.toggle('hidden', resp !== '__NOVA_PESSOA__');
-  }
-
-  if (outroBancoInput) {
-    outroBancoInput.classList.toggle('hidden', contaVal !== '__OUTRO_BANCO__');
-  }
-
-  evaluateSplitWarning();
-}
-
-function resolveSelectedAccount() {
-  const contaVal = document.getElementById('txConta').value;
-  if (contaVal === '__OUTRO_BANCO__') {
-    return canonicalizeAccount(document.getElementById('txOutroBanco').value || 'Outro Banco');
-  }
-  return canonicalizeAccount(contaVal);
-}
-
-function resolveSelectedPerson() {
-  const resp = document.getElementById('txResponsavel').value;
-  if (resp === '__NOVA_PESSOA__') {
-    const custom = normalizePersonName(document.getElementById('txNovaPessoa').value);
-    if (custom && !state.people.includes(custom)) {
-      state.people.push(custom);
-      localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
-      renderPeopleControls();
-    }
-    return custom || 'TERCEIRO';
-  }
-  return resp;
-}
-
-/* ==========================================================================
-   4. ESCRITA, EDIÇÃO E EXCLUSÃO EM TODOS OS MÓDULOS
-   ========================================================================== */
-
-async function handleQuickAddSubmit(event) {
-  event.preventDefault();
-  const btn = document.getElementById('btnSubmitTx');
-  btn.disabled = true;
-  btn.textContent = 'Salvando...';
-
-  try {
-    const tipo = document.getElementById('txTipo').value;
-    const descricao = canonicalizeText(document.getElementById('txDescricao').value);
-    const valor = Number(document.getElementById('txValor').value);
-    const data = document.getElementById('txData').value;
-    const categoria = canonicalizeCategory(document.getElementById('txCategoria').value);
-    const conta = resolveSelectedAccount();
-    const baseKey = `pwa_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-    if (tipo === 'COMPRA_CARTAO') {
-      const parcelas = Math.max(1, parseInt(document.getElementById('txParcelas').value || '1', 10));
-      const resp = resolveSelectedPerson();
-      const minhaRaw = document.getElementById('txMinhaParte').value;
-      const desconto = Number(document.getElementById('txDesconto').value || 0);
-
-      let modoDivisao = 'INTEGRAL_MEU';
-      let pessoaId = '';
-      let valorMinhaParte = valor;
-      let valorParteTerceiro = 0;
-
-      if (resp === 'EU') {
-        modoDivisao = 'INTEGRAL_MEU';
-        pessoaId = '';
-        valorMinhaParte = valor;
-        valorParteTerceiro = 0;
-      } else if (resp === 'MAE_COMPARTILHADO') {
-        modoDivisao = 'COMPARTILHADO';
-        pessoaId = 'MAE';
-        valorMinhaParte = minhaRaw !== '' ? Number(minhaRaw) : valor / 2;
-        valorParteTerceiro = Math.max(0, valor - valorMinhaParte);
-      } else {
-        modoDivisao = 'INTEGRAL_TERCEIRO';
-        pessoaId = normalizePersonName(resp);
-        valorMinhaParte = 0;
-        valorParteTerceiro = valor;
-      }
-
-      const firstCycle = computeStatementCycleForCard(conta, data, 0);
-
-      const res = await postToBackend('createCardPurchase', {
-        idempotency_key: baseKey,
-        data_compra: data,
-        cartao_id: conta,
-        descricao,
-        categoria_id: categoria,
-        valor_total: valor,
-        qtd_parcelas: parcelas,
-        responsavel_principal: resp,
-        modo_divisao: modoDivisao,
-        pessoa_id: pessoaId,
-        valor_minha_parte: valorMinhaParte,
-        valor_parte_terceiro: valorParteTerceiro,
-        desconto_estimado: desconto,
-        is_estimativa: desconto > 0 || resp === 'MAE_COMPARTILHADO',
-        competencia_inicial: firstCycle.competencia,
-        data_vencimento_inicial: firstCycle.dueDateIso
-      });
-
-      if (res && res.alerta_divergencia) {
-        showToast(`Registrado com aviso: ${res.alerta_divergencia}`, 'warn');
-      } else {
-        showToast(
-          parcelas > 1
-            ? `Compra parcelada em ${parcelas}x (${conta}) — vence ${formatDateBR(firstCycle.dueDateIso)}!`
-            : `Compra no cartão ${conta} — vence ${formatDateBR(firstCycle.dueDateIso)}!`,
-          'success'
-        );
-      }
-    } else {
-      const isRecorrente = document.getElementById('txIsRecorrente').checked;
-      const totalMeses = isRecorrente
-        ? Math.min(24, Math.max(2, parseInt(document.getElementById('txRecorrenciaMeses').value || '12', 10)))
-        : 1;
-
-      if (tipo === 'REEMBOLSO') {
-        const pessoaId = resolveSelectedPerson();
-        const cleanPerson = (pessoaId === 'EU' || pessoaId === 'MAE_COMPARTILHADO')
-          ? 'MAE'
-          : normalizePersonName(pessoaId);
-
-        for (let i = 0; i < totalMeses; i += 1) {
-          const dtOcorrencia = addMonthsToDateIso(data, i);
-          const descOcorrencia = totalMeses > 1 ? `${descricao} (${i + 1}/${totalMeses})` : descricao;
-          btn.textContent = totalMeses > 1 ? `Salvando ${i + 1}/${totalMeses}...` : 'Salvando...';
-
-          await postToBackend('recordRefund', {
-            idempotency_key: `${baseKey}_m${i + 1}`,
-            pessoa_id: cleanPerson,
-            competencia: dtOcorrencia.slice(0, 7),
-            data_recebimento: dtOcorrencia,
-            descricao: descOcorrencia,
-            categoria_id: categoria,
-            account_id: conta,
-            valor_recebido: valor
-          });
-        }
-        showToast(
-          totalMeses > 1
-            ? `${totalMeses} reembolsos recorrentes registrados!`
-            : 'Reembolso registrado com sucesso!',
-          'success'
-        );
-      } else {
-        for (let i = 0; i < totalMeses; i += 1) {
-          const dtOcorrencia = addMonthsToDateIso(data, i);
-          const descOcorrencia = totalMeses > 1 ? `${descricao} (${i + 1}/${totalMeses})` : descricao;
-          btn.textContent = totalMeses > 1 ? `Salvando ${i + 1}/${totalMeses}...` : 'Salvando...';
-
-          await postToBackend('createTransaction', {
-            idempotency_key: `${baseKey}_m${i + 1}`,
-            data_competencia: dtOcorrencia,
-            data_caixa: dtOcorrencia,
-            descricao: descOcorrencia,
-            tipo_mov: tipo,
-            categoria_id: categoria,
-            account_id: conta,
-            valor,
-            status: 'REALIZADO'
-          });
-        }
-        showToast(
-          totalMeses > 1
-            ? `Recorrência mensal (${totalMeses} meses) lançada com sucesso!`
-            : 'Movimentação registrada com sucesso!',
-          'success'
-        );
-      }
-    }
-
-    document.getElementById('quickAddForm').reset();
-    document.getElementById('txData').value = new Date().toISOString().slice(0, 10);
-    closeModal();
-    await syncFromBackend();
-  } catch (err) {
-    showToast(`Erro ao salvar: ${err.message}`, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Confirmar e Sincronizar';
-  }
-}
-
-async function handleDeleteMovement(txId, label) {
-  if (!txId) return;
-  if (!confirm(`Excluir a movimentação "${label}"?`)) return;
-  try {
-    await postToBackend('deleteTransaction', { tx_id: txId });
-    showToast('Movimentação excluída.', 'success');
-    await syncFromBackend();
-  } catch (err) {
-    showToast(`Erro ao excluir: ${err.message}`, 'error');
-  }
-}
-
-async function handleDeleteCardPurchase(compraId, label) {
-  if (!compraId) return;
-  if (!confirm(`Excluir a compra no cartão "${label}" e todas as suas parcelas/rateios?`)) return;
-  try {
-    await postToBackend('deleteCardPurchase', { compra_id: compraId });
-    showToast('Compra no cartão excluída.', 'success');
-    await syncFromBackend();
-  } catch (err) {
-    showToast(`Erro ao excluir compra no cartão: ${err.message}`, 'error');
-  }
-}
-
-async function handleDeleteThirdParty(razaoId, label) {
-  if (!razaoId) return;
-  if (!confirm(`Excluir o lançamento de terceiro "${label}"?`)) return;
-  try {
-    await postToBackend('deleteThirdPartyEntry', { razao_id: razaoId });
-    showToast('Lançamento de terceiro excluído.', 'success');
-    await syncFromBackend();
-  } catch (err) {
-    showToast(`Erro ao excluir terceiro: ${err.message}`, 'error');
-  }
-}
-
-async function handleDeleteInvestmentOp(opInvId, label) {
-  if (!opInvId) return;
-  if (!confirm(`Excluir esta operação de investimento (${label})?`)) return;
-  try {
-    await postToBackend('deleteInvestmentOp', { op_inv_id: opInvId });
-    showToast('Operação de investimento excluída.', 'success');
-    await syncFromBackend();
-  } catch (err) {
-    showToast(`Erro ao excluir operação: ${err.message}`, 'error');
-  }
-}
-
-async function handleDeleteInvestmentAsset(ticker) {
-  if (!ticker) return;
-  if (!confirm(`Excluir TODAS as operações do ativo "${ticker}"?`)) return;
-  try {
-    await postToBackend('deleteInvestmentOp', { ticker });
-    showToast(`Ativo ${ticker} removido da carteira.`, 'success');
-    await syncFromBackend();
-  } catch (err) {
-    showToast(`Erro ao excluir ativo: ${err.message}`, 'error');
-  }
-}
 
 function openEditModal(config) {
   document.getElementById('editModalTitle').textContent = config.title || 'Editar Lançamento';
@@ -1092,9 +436,9 @@ function openEditModal(config) {
   document.getElementById('editId').value = config.id;
   document.getElementById('editDesc').value = config.desc || '';
   document.getElementById('editDate').value = config.date || '';
-  document.getElementById('editValor').value = config.valor || '';
+  document.getElementById('editValor').value = config.valor !== undefined ? config.valor : '';
   document.getElementById('editAccountOrPerson').value = config.accountOrPerson || '';
-  document.getElementById('editQty').value = config.qty || '';
+  document.getElementById('editQty').value = config.qty !== undefined ? config.qty : '';
   document.getElementById('editStatus').value = config.status || 'PENDENTE';
 
   document.getElementById('editDateWrap').classList.toggle('hidden', !config.showDate);
@@ -1163,10 +507,612 @@ async function handleSaveEditSubmit(event) {
     showToast('Alterações salvas com sucesso!', 'success');
     await syncFromBackend();
   } catch (err) {
+    console.error('handleSaveEditSubmit error:', err);
     showToast(`Erro ao editar: ${err.message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Salvar Alterações';
+  }
+}
+
+function handleGlobalDelegatedClicks(event) {
+  const snap = state.snapshot || {};
+  const movs = Array.isArray(snap.movimentacoes) ? snap.movimentacoes : [];
+  const parcelas = Array.isArray(snap.parcelas_cartao) ? snap.parcelas_cartao : [];
+  const terceiros = Array.isArray(snap.terceiros_razao) ? snap.terceiros_razao : [];
+  const investimentos = Array.isArray(snap.investimentos) ? snap.investimentos : [];
+
+  // 1. Excluir movimentação
+  const delMovBtn = event.target.closest('[data-del-mov]');
+  if (delMovBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const txId = delMovBtn.dataset.delMov;
+    const label = delMovBtn.dataset.delLabel || 'Lançamento';
+    if (!txId) return showToast('ID da movimentação não encontrado.', 'error');
+    if (!confirm(`Excluir a movimentação "${label}"?`)) return;
+    postToBackend('deleteTransaction', { tx_id: txId })
+      .then(() => { showToast('Movimentação excluída.', 'success'); return syncFromBackend(); })
+      .catch((err) => showToast(`Erro ao excluir: ${err.message}`, 'error'));
+    return;
+  }
+
+  // 2. Editar movimentação
+  const editMovBtn = event.target.closest('[data-edit-mov]');
+  if (editMovBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const m = movs.find((x) => String(x.tx_id || x.id) === String(editMovBtn.dataset.editMov));
+    if (!m) return showToast('Lançamento não encontrado no cache.', 'error');
+    openEditModal({
+      title: 'Editar Movimentação',
+      kind: 'MOVEMENT',
+      id: m.tx_id || m.id,
+      desc: m.descricao || '',
+      date: String(m.data_caixa || m.data_competencia || '').slice(0, 10),
+      valor: Number(m.valor || 0),
+      accountOrPerson: canonicalizeAccount(m.account_id),
+      showDate: true,
+      showVal: true,
+      showAccountOrPerson: true
+    });
+    return;
+  }
+
+  // 3. Excluir compra no cartão
+  const delCardBtn = event.target.closest('[data-del-card-purchase]');
+  if (delCardBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const compraId = delCardBtn.dataset.delCardPurchase;
+    const label = delCardBtn.dataset.delLabel || 'Compra no cartão';
+    if (!compraId) return showToast('ID da compra no cartão não encontrado.', 'error');
+    if (!confirm(`Excluir "${label}" e todas as parcelas/rateios?`)) return;
+    postToBackend('deleteCardPurchase', { compra_id: compraId })
+      .then(() => { showToast('Compra no cartão excluída.', 'success'); return syncFromBackend(); })
+      .catch((err) => showToast(`Erro ao excluir compra: ${err.message}`, 'error'));
+    return;
+  }
+
+  // 4. Editar compra no cartão
+  const editCardBtn = event.target.closest('[data-edit-card-purchase]');
+  if (editCardBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    openEditModal({
+      title: 'Editar Compra no Cartão',
+      kind: 'CARD_PURCHASE',
+      id: editCardBtn.dataset.editCardPurchase,
+      desc: (editCardBtn.dataset.cardDesc || '').replace(/\s*\(\d+\/\d+\)$/, ''),
+      accountOrPerson: editCardBtn.dataset.cardName || 'Nubank',
+      showDate: false,
+      showVal: false,
+      showAccountOrPerson: true
+    });
+    return;
+  }
+
+  // 5. Excluir lançamento de terceiro
+  const delThirdBtn = event.target.closest('[data-del-third]');
+  if (delThirdBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const razaoId = delThirdBtn.dataset.delThird;
+    const label = delThirdBtn.dataset.delLabel || 'Lançamento de terceiro';
+    const person = delThirdBtn.dataset.delPerson || '';
+    const descRaw = delThirdBtn.dataset.delDescRaw || '';
+    const comp = delThirdBtn.dataset.delComp || '';
+    const val = delThirdBtn.dataset.delVal;
+
+    if (!confirm(`Excluir o lançamento de terceiro "${label}"?`)) return;
+    postToBackend('deleteThirdPartyEntry', {
+      razao_id: razaoId,
+      pessoa_id: person,
+      descricao: descRaw,
+      competencia: comp,
+      valor: val
+    })
+      .then(() => { showToast('Lançamento de terceiro excluído.', 'success'); return syncFromBackend(); })
+      .catch((err) => showToast(`Erro ao excluir terceiro: ${err.message}`, 'error'));
+    return;
+  }
+
+  // 6. Editar lançamento de terceiro
+  const editThirdBtn = event.target.closest('[data-edit-third]');
+  if (editThirdBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const targetId = editThirdBtn.dataset.editThird;
+    const t = terceiros.find((x, idx) => String(x.razao_id || x.id || `idx_${idx}`) === String(targetId));
+    if (!t) return showToast('Lançamento de terceiro não encontrado.', 'error');
+    openEditModal({
+      title: 'Editar Lançamento de Terceiro',
+      kind: 'THIRD_PARTY',
+      id: t.razao_id || t.id || targetId,
+      desc: t.descricao || t.tipo_evento || '',
+      valor: Number(t.valor_ajustado_cobrado || 0),
+      accountOrPerson: normalizePersonName(t.pessoa_id || 'MAE'),
+      status: String(t.status || 'PENDENTE').toUpperCase(),
+      showDate: false,
+      showVal: true,
+      showAccountOrPerson: true,
+      showStatus: true
+    });
+    return;
+  }
+
+  // 7. Excluir ativo inteiro nos investimentos
+  const delAssetBtn = event.target.closest('[data-del-asset]');
+  if (delAssetBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const ticker = delAssetBtn.dataset.delAsset;
+    if (!ticker) return;
+    if (!confirm(`Excluir TODAS as operações do ativo "${ticker}"?`)) return;
+    postToBackend('deleteInvestmentOp', { ticker })
+      .then(() => { showToast(`Ativo ${ticker} removido.`, 'success'); return syncFromBackend(); })
+      .catch((err) => showToast(`Erro ao excluir ativo: ${err.message}`, 'error'));
+    return;
+  }
+
+  // 8. Excluir operação de investimento
+  const delInvBtn = event.target.closest('[data-del-inv]');
+  if (delInvBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const opInvId = delInvBtn.dataset.delInv;
+    const label = delInvBtn.dataset.delLabel || 'Operação';
+    if (!opInvId) return showToast('ID da operação não encontrado.', 'error');
+    if (!confirm(`Excluir operação em "${label}"?`)) return;
+    postToBackend('deleteInvestmentOp', { op_inv_id: opInvId })
+      .then(() => { showToast('Operação excluída.', 'success'); return syncFromBackend(); })
+      .catch((err) => showToast(`Erro ao excluir operação: ${err.message}`, 'error'));
+    return;
+  }
+
+  // 9. Editar operação de investimento
+  const editInvBtn = event.target.closest('[data-edit-inv]');
+  if (editInvBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const op = investimentos.find((x) => String(x.op_inv_id || x.id) === String(editInvBtn.dataset.editInv));
+    if (!op) return showToast('Operação não encontrada.', 'error');
+    openEditModal({
+      title: 'Editar Operação de Investimento',
+      kind: 'INVESTMENT',
+      id: op.op_inv_id || op.id,
+      desc: op.ticker || op.nome_ativo || '',
+      date: String(op.data_op || op.data_operacao || '').slice(0, 10),
+      valor: Number(op.valor_total || 0),
+      qty: Number(op.quantidade || 0),
+      showDate: true,
+      showVal: true,
+      showQty: true
+    });
+  }
+}
+
+/* ==========================================================================
+   4. CADASTRO DE PESSOAS, CARTÕES, LANÇAMENTOS E INVESTIMENTOS
+   ========================================================================== */
+
+function syncPeopleListFromData() {
+  const hiddenSet = new Set(state.hiddenPeople || []);
+  const set = new Set();
+
+  if (Array.isArray(state.people)) {
+    state.people.forEach((p) => {
+      const n = normalizePersonName(p);
+      if (n && n !== 'EU' && !hiddenSet.has(n)) set.add(n);
+    });
+  }
+
+  const terceiros = (state.snapshot && Array.isArray(state.snapshot.terceiros_razao))
+    ? state.snapshot.terceiros_razao
+    : [];
+  terceiros.forEach((t) => {
+    const n = normalizePersonName(t.pessoa_id);
+    if (n && n !== 'EU' && !hiddenSet.has(n)) set.add(n);
+  });
+
+  state.people = Array.from(set);
+  localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
+}
+
+function handleRemovePerson(personName) {
+  const clean = normalizePersonName(personName);
+  if (!confirm(`Remover "${clean}" da lista de pessoas?`)) return;
+
+  state.people = state.people.filter((p) => p !== clean);
+  if (!state.hiddenPeople.includes(clean)) state.hiddenPeople.push(clean);
+  localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
+  localStorage.setItem(STORAGE_KEYS.HIDDEN_PEOPLE, JSON.stringify(state.hiddenPeople));
+
+  if (state.selectedPersonFilter === clean) state.selectedPersonFilter = 'ALL';
+  renderPeopleControls();
+  renderAll();
+  showToast(`Pessoa "${clean}" removida.`, 'info');
+}
+
+function renderPeopleControls() {
+  syncPeopleListFromData();
+
+  const chipsEl = document.getElementById('peopleChips');
+  if (chipsEl) {
+    const allChip = `<button type="button" class="chip ${state.selectedPersonFilter === 'ALL' ? 'active' : ''}" data-person="ALL">Todos</button>`;
+    const personChips = state.people
+      .map((p) => `
+        <span class="chip chip-with-del ${state.selectedPersonFilter === p ? 'active' : ''}" data-person="${p}">
+          <span>${p}</span>
+          <button type="button" class="chip-del-x" data-del-person="${p}" title="Remover pessoa">✕</button>
+        </span>
+      `)
+      .join('');
+    chipsEl.innerHTML = allChip + personChips;
+
+    chipsEl.querySelectorAll('[data-person]').forEach((chip) => {
+      chip.addEventListener('click', (e) => {
+        if (e.target.closest('[data-del-person]')) return;
+        state.selectedPersonFilter = chip.dataset.person;
+        renderPeopleControls();
+        renderAll();
+      });
+    });
+
+    chipsEl.querySelectorAll('[data-del-person]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleRemovePerson(btn.dataset.delPerson);
+      });
+    });
+  }
+
+  const badge = document.getElementById('terceirosActiveFilterBadge');
+  if (badge) {
+    badge.textContent = state.selectedPersonFilter === 'ALL'
+      ? 'Exibindo: Todos'
+      : `Filtrado por: ${state.selectedPersonFilter}`;
+  }
+
+  const respSelect = document.getElementById('txResponsavel');
+  if (respSelect) {
+    const currentVal = respSelect.value;
+    const baseOptions = [
+      { value: 'EU', label: 'Apenas Eu' },
+      { value: 'MAE_COMPARTILHADO', label: 'Compartilhado com Mãe' }
+    ];
+    state.people.forEach((person) => baseOptions.push({ value: person, label: `Terceiro: ${person}` }));
+    baseOptions.push({ value: '__NOVA_PESSOA__', label: '+ Cadastrar nova pessoa...' });
+
+    respSelect.innerHTML = baseOptions.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join('');
+    if (currentVal && Array.from(respSelect.options).some((o) => o.value === currentVal)) {
+      respSelect.value = currentVal;
+    }
+  }
+}
+
+function handleAddPerson(event) {
+  event.preventDefault();
+  const input = document.getElementById('newPersonName');
+  const clean = normalizePersonName(input.value);
+  if (!clean) return;
+
+  state.hiddenPeople = state.hiddenPeople.filter((p) => p !== clean);
+  localStorage.setItem(STORAGE_KEYS.HIDDEN_PEOPLE, JSON.stringify(state.hiddenPeople));
+
+  if (!state.people.includes(clean)) {
+    state.people.push(clean);
+    localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
+  }
+  input.value = '';
+  renderPeopleControls();
+  renderAll();
+  showToast(`Pessoa "${clean}" adicionada.`, 'success');
+}
+
+function syncCardsConfigFromData() {
+  const parcelas = (state.snapshot && Array.isArray(state.snapshot.parcelas_cartao))
+    ? state.snapshot.parcelas_cartao
+    : [];
+  parcelas.forEach((p) => {
+    const cName = canonicalizeAccount(p.cartao_id || '');
+    if (cName && cName !== 'Sem Conta' && !state.cardsConfig[cName]) {
+      state.cardsConfig[cName] = { ...DEFAULT_CARD_RULE };
+    }
+  });
+  localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
+}
+
+function renderCardsConfigManager() {
+  syncCardsConfigFromData();
+  const container = document.getElementById('cardsConfigList');
+  if (!container) return;
+
+  const cardNames = Object.keys(state.cardsConfig).sort();
+  if (!cardNames.length) {
+    container.innerHTML = '<p class="muted">Nenhum cartão cadastrado ainda.</p>';
+    return;
+  }
+
+  container.innerHTML = cardNames.map((name) => {
+    const rule = getCardRule(name);
+    const sample = computeStatementCycleForCard(name, '2026-11-20', 0);
+    const fechaTxt = rule.closingMode === 'LAST' ? 'último dia do mês' : `dia ${rule.closingDay}`;
+    const venceTxt = rule.dueMode === 'DAY' ? `dia ${rule.dueDay}` : `${rule.dueDays} dias após fechamento`;
+
+    return `
+      <div class="card-rule-box" data-card-name="${name}">
+        <div class="card-rule-top">
+          <div>
+            <strong>${name}</strong>
+            <span class="month-detail-meta">Fecha: ${fechaTxt} • Vence: ${venceTxt} • Ex. 20/11/2026 → vence ${formatDateBR(sample.dueDateIso)} (${sample.competencia})</span>
+          </div>
+          <button type="button" class="btn-delete" data-remove-card="${name}" title="Remover cartão">🗑️</button>
+        </div>
+        <div class="card-rule-grid">
+          <label>
+            Fechamento
+            <select class="rule-closing-mode">
+              <option value="DAY" ${rule.closingMode === 'DAY' ? 'selected' : ''}>Dia fixo (1 a 28)</option>
+              <option value="LAST" ${rule.closingMode === 'LAST' ? 'selected' : ''}>Último dia do mês</option>
+            </select>
+          </label>
+          <label class="${rule.closingMode === 'LAST' ? 'hidden' : ''}">
+            Dia Fechamento (1-28)
+            <input type="number" class="rule-closing-day" min="1" max="28" value="${rule.closingDay}" />
+          </label>
+          <label>
+            Regra Vencimento
+            <select class="rule-due-mode">
+              <option value="DAYS_AFTER" ${rule.dueMode === 'DAYS_AFTER' ? 'selected' : ''}>Dias após fechamento</option>
+              <option value="DAY" ${rule.dueMode === 'DAY' ? 'selected' : ''}>Dia fixo do mês</option>
+            </select>
+          </label>
+          <label class="${rule.dueMode !== 'DAYS_AFTER' ? 'hidden' : ''}">
+            Dias à Frente
+            <input type="number" class="rule-due-days" min="1" max="45" value="${rule.dueDays}" />
+          </label>
+          <label class="${rule.dueMode !== 'DAY' ? 'hidden' : ''}">
+            Dia Fixo Venc. (1-31)
+            <input type="number" class="rule-due-day" min="1" max="31" value="${rule.dueDay}" />
+          </label>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.card-rule-box').forEach((box) => {
+    const cName = box.dataset.cardName;
+    const onRuleChange = () => {
+      state.cardsConfig[cName] = {
+        closingMode: box.querySelector('.rule-closing-mode').value,
+        closingDay: Math.min(28, Math.max(1, Number(box.querySelector('.rule-closing-day').value || 25))),
+        dueMode: box.querySelector('.rule-due-mode').value,
+        dueDays: Math.min(45, Math.max(1, Number(box.querySelector('.rule-due-days').value || 6))),
+        dueDay: Math.min(31, Math.max(1, Number(box.querySelector('.rule-due-day').value || 6)))
+      };
+      localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
+      renderCardsConfigManager();
+      renderAll();
+      updateCardCyclePreviewInModal();
+    };
+    box.querySelectorAll('select, input').forEach((ctrl) => ctrl.addEventListener('change', onRuleChange));
+  });
+
+  container.querySelectorAll('[data-remove-card]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      delete state.cardsConfig[btn.dataset.removeCard];
+      localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
+      renderCardsConfigManager();
+      renderAll();
+    });
+  });
+}
+
+function handleAddCardRule(event) {
+  event.preventDefault();
+  const input = document.getElementById('newCardName');
+  const cardName = canonicalizeAccount(input.value);
+  if (!cardName) return;
+  if (!state.cardsConfig[cardName]) {
+    state.cardsConfig[cardName] = { ...DEFAULT_CARD_RULE };
+    localStorage.setItem(STORAGE_KEYS.CARDS_CONFIG, JSON.stringify(state.cardsConfig));
+  }
+  input.value = '';
+  renderCardsConfigManager();
+  renderAll();
+  showToast(`Cartão "${cardName}" adicionado.`, 'success');
+}
+
+function updateCardCyclePreviewInModal() {
+  const previewEl = document.getElementById('cardCyclePreview');
+  if (!previewEl || document.getElementById('txTipo')?.value !== 'COMPRA_CARTAO') return;
+  const cardName = resolveSelectedAccount();
+  const dt = document.getElementById('txData')?.value || new Date().toISOString().slice(0, 10);
+  const parcelas = Math.max(1, parseInt(document.getElementById('txParcelas')?.value || '1', 10));
+  const firstCycle = computeStatementCycleForCard(cardName, dt, 0);
+  const lastCycle = computeStatementCycleForCard(cardName, dt, parcelas - 1);
+
+  previewEl.textContent = parcelas > 1
+    ? `${cardName}: 1ª parcela vence ${formatDateBR(firstCycle.dueDateIso)} (${firstCycle.competencia}) • ${parcelas}ª em ${formatDateBR(lastCycle.dueDateIso)} (${lastCycle.competencia}).`
+    : `${cardName}: fatura ${firstCycle.competencia} • vencimento estimado ${formatDateBR(firstCycle.dueDateIso)}.`;
+}
+
+function evaluateSplitWarning() {
+  const tipo = document.getElementById('txTipo').value;
+  const resp = document.getElementById('txResponsavel').value;
+  const warnBox = document.getElementById('splitAlert');
+  const total = Number(document.getElementById('txValor').value || 0);
+  const minhaRaw = document.getElementById('txMinhaParte').value;
+  const desc = Number(document.getElementById('txDesconto').value || 0);
+
+  if (tipo !== 'COMPRA_CARTAO' || resp !== 'MAE_COMPARTILHADO' || total <= 0) {
+    warnBox.classList.add('hidden');
+    return;
+  }
+
+  if (minhaRaw !== '') {
+    const minha = Number(minhaRaw);
+    const maeBruta = Math.max(0, total - minha);
+    const maeLiquida = Math.max(0, maeBruta - desc);
+    if (desc > 0 || maeBruta !== maeLiquida) {
+      warnBox.classList.remove('hidden');
+      warnBox.textContent = `Total: ${formatBRL(total)} | Sua parte: ${formatBRL(minha)} | Parte bruta Mãe: ${formatBRL(maeBruta)} | Desconto: ${formatBRL(desc)} | Líquido Mãe: ${formatBRL(maeLiquida)}.`;
+      return;
+    }
+  }
+  warnBox.classList.add('hidden');
+}
+
+function updateQuickFormVisibility() {
+  const tipo = document.getElementById('txTipo').value;
+  const resp = document.getElementById('txResponsavel').value;
+  const contaVal = document.getElementById('txConta').value;
+  const isRec = document.getElementById('txIsRecorrente').checked;
+
+  document.getElementById('cardExtraFields').classList.toggle('hidden', tipo !== 'COMPRA_CARTAO');
+  document.getElementById('recurrenceBox').classList.toggle('hidden', tipo === 'COMPRA_CARTAO');
+  document.getElementById('recurrenceFields').classList.toggle('hidden', !isRec);
+  document.getElementById('splitFields').classList.toggle('hidden', !(tipo === 'COMPRA_CARTAO' && resp === 'MAE_COMPARTILHADO'));
+  document.getElementById('txNovaPessoa').classList.toggle('hidden', resp !== '__NOVA_PESSOA__');
+  document.getElementById('txOutroBanco').classList.toggle('hidden', contaVal !== '__OUTRO_BANCO__');
+
+  if (tipo === 'COMPRA_CARTAO') updateCardCyclePreviewInModal();
+  evaluateSplitWarning();
+}
+
+function resolveSelectedAccount() {
+  const contaVal = document.getElementById('txConta').value;
+  return contaVal === '__OUTRO_BANCO__'
+    ? canonicalizeAccount(document.getElementById('txOutroBanco').value || 'Outro Banco')
+    : canonicalizeAccount(contaVal);
+}
+
+function resolveSelectedPerson() {
+  const resp = document.getElementById('txResponsavel').value;
+  if (resp === '__NOVA_PESSOA__') {
+    const custom = normalizePersonName(document.getElementById('txNovaPessoa').value);
+    if (custom && !state.people.includes(custom)) {
+      state.people.push(custom);
+      localStorage.setItem(STORAGE_KEYS.PEOPLE, JSON.stringify(state.people));
+      renderPeopleControls();
+    }
+    return custom || 'TERCEIRO';
+  }
+  return resp;
+}
+
+async function handleQuickAddSubmit(event) {
+  event.preventDefault();
+  const btn = document.getElementById('btnSubmitTx');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    const tipo = document.getElementById('txTipo').value;
+    const descricao = canonicalizeText(document.getElementById('txDescricao').value);
+    const valor = Number(document.getElementById('txValor').value);
+    const data = document.getElementById('txData').value;
+    const categoria = canonicalizeCategory(document.getElementById('txCategoria').value);
+    const conta = resolveSelectedAccount();
+    const baseKey = `pwa_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    if (tipo === 'COMPRA_CARTAO') {
+      const parcelas = Math.max(1, parseInt(document.getElementById('txParcelas').value || '1', 10));
+      const resp = resolveSelectedPerson();
+      const minhaRaw = document.getElementById('txMinhaParte').value;
+      const desconto = Number(document.getElementById('txDesconto').value || 0);
+
+      let modoDivisao = 'INTEGRAL_MEU';
+      let pessoaId = '';
+      let valorMinhaParte = valor;
+      let valorParteTerceiro = 0;
+
+      if (resp === 'MAE_COMPARTILHADO') {
+        modoDivisao = 'COMPARTILHADO';
+        pessoaId = 'MAE';
+        valorMinhaParte = minhaRaw !== '' ? Number(minhaRaw) : valor / 2;
+        valorParteTerceiro = Math.max(0, valor - valorMinhaParte);
+      } else if (resp !== 'EU') {
+        modoDivisao = 'INTEGRAL_TERCEIRO';
+        pessoaId = normalizePersonName(resp);
+        valorMinhaParte = 0;
+        valorParteTerceiro = valor;
+      }
+
+      const firstCycle = computeStatementCycleForCard(conta, data, 0);
+      await postToBackend('createCardPurchase', {
+        idempotency_key: baseKey,
+        data_compra: data,
+        cartao_id: conta,
+        descricao,
+        categoria_id: categoria,
+        valor_total: valor,
+        qtd_parcelas: parcelas,
+        responsavel_principal: resp,
+        modo_divisao: modoDivisao,
+        pessoa_id: pessoaId,
+        valor_minha_parte: valorMinhaParte,
+        valor_parte_terceiro: valorParteTerceiro,
+        desconto_estimado: desconto,
+        is_estimativa: desconto > 0 || resp === 'MAE_COMPARTILHADO',
+        competencia_inicial: firstCycle.competencia,
+        data_vencimento_inicial: firstCycle.dueDateIso
+      });
+      showToast('Compra no cartão registrada!', 'success');
+    } else {
+      const isRecorrente = document.getElementById('txIsRecorrente').checked;
+      const totalMeses = isRecorrente
+        ? Math.min(24, Math.max(2, parseInt(document.getElementById('txRecorrenciaMeses').value || '12', 10)))
+        : 1;
+
+      if (tipo === 'REEMBOLSO') {
+        const pessoaId = resolveSelectedPerson();
+        const cleanPerson = (pessoaId === 'EU' || pessoaId === 'MAE_COMPARTILHADO') ? 'MAE' : normalizePersonName(pessoaId);
+        for (let i = 0; i < totalMeses; i += 1) {
+          const dtOcorrencia = addMonthsToDateIso(data, i);
+          const descOcorrencia = totalMeses > 1 ? `${descricao} (${i + 1}/${totalMeses})` : descricao;
+          await postToBackend('recordRefund', {
+            idempotency_key: `${baseKey}_m${i + 1}`,
+            pessoa_id: cleanPerson,
+            competencia: dtOcorrencia.slice(0, 7),
+            data_recebimento: dtOcorrencia,
+            descricao: descOcorrencia,
+            categoria_id: categoria,
+            account_id: conta,
+            valor_recebido: valor
+          });
+        }
+        showToast('Reembolso registrado!', 'success');
+      } else {
+        for (let i = 0; i < totalMeses; i += 1) {
+          const dtOcorrencia = addMonthsToDateIso(data, i);
+          const descOcorrencia = totalMeses > 1 ? `${descricao} (${i + 1}/${totalMeses})` : descricao;
+          await postToBackend('createTransaction', {
+            idempotency_key: `${baseKey}_m${i + 1}`,
+            data_competencia: dtOcorrencia,
+            data_caixa: dtOcorrencia,
+            descricao: descOcorrencia,
+            tipo_mov: tipo,
+            categoria_id: categoria,
+            account_id: conta,
+            valor,
+            status: 'REALIZADO'
+          });
+        }
+        showToast('Movimentação registrada!', 'success');
+      }
+    }
+
+    document.getElementById('quickAddForm').reset();
+    document.getElementById('txData').value = new Date().toISOString().slice(0, 10);
+    closeModal();
+    await syncFromBackend();
+  } catch (err) {
+    showToast(`Erro ao salvar: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Confirmar e Sincronizar';
   }
 }
 
@@ -1184,10 +1130,9 @@ async function handleInvestSubmit(event) {
     const qtd = Number(document.getElementById('invQtd').value || 0);
     const valorTotal = Number(document.getElementById('invValorTotal').value || 0);
     const precoUnit = qtd > 0 ? Number((valorTotal / qtd).toFixed(4)) : valorTotal;
-    const idemKey = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     await postToBackend('recordInvestmentOp', {
-      idempotency_key: idemKey,
+      idempotency_key: `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       data_operacao: dataOp,
       tipo_op: tipoOp,
       classe_ativo: classeAtivo,
@@ -1200,7 +1145,7 @@ async function handleInvestSubmit(event) {
 
     document.getElementById('investForm').reset();
     document.getElementById('invData').value = new Date().toISOString().slice(0, 10);
-    showToast(`Operação em ${ticker} registrada com sucesso!`, 'success');
+    showToast(`Operação em ${ticker} registrada!`, 'success');
     await syncFromBackend();
   } catch (err) {
     showToast(`Erro ao registrar investimento: ${err.message}`, 'error');
@@ -1212,49 +1157,36 @@ async function handleInvestSubmit(event) {
 
 async function handleUpdateQuotes() {
   try {
-    updateSyncBadge('Atualizando cotações...', 'warn');
     await postToBackend('refreshQuotes', {});
     showToast('Cotações atualizadas!', 'success');
     await syncFromBackend();
   } catch (err) {
-    updateSyncBadge('Falha nas cotações', 'warn');
-    showToast(`Não foi possível atualizar cotações: ${err.message}`, 'error');
+    showToast(`Erro nas cotações: ${err.message}`, 'error');
   }
 }
 
 /* ==========================================================================
-   5. RENDERIZAÇÃO POR SEÇÃO (INÍCIO, CONTAS, MOVS, CARTÕES, TERCEIROS, INV)
+   5. RENDERIZAÇÃO
    ========================================================================== */
 
 function getChartColorsForCurrentTheme() {
   const t = state.theme;
-  if (t === 'white-white') {
-    return { barOut: '#d97706', barOk: '#16a34a', barNeg: '#dc2626', axis: '#cbd5e1', label: '#475569' };
-  }
-  if (t === 'blue-white') {
-    return { barOut: '#d97706', barOk: '#0284c7', barNeg: '#dc2626', axis: '#93c5fd', label: '#334155' };
-  }
-  if (t === 'dark') {
-    return { barOut: '#f59e0b', barOk: '#22c55e', barNeg: '#ef4444', axis: '#3f3f46', label: '#a1a1aa' };
-  }
+  if (t === 'white-white') return { barOut: '#d97706', barOk: '#16a34a', barNeg: '#dc2626', axis: '#cbd5e1', label: '#475569' };
+  if (t === 'blue-white') return { barOut: '#d97706', barOk: '#0284c7', barNeg: '#dc2626', axis: '#93c5fd', label: '#334155' };
+  if (t === 'dark') return { barOut: '#f59e0b', barOk: '#22c55e', barNeg: '#ef4444', axis: '#3f3f46', label: '#a1a1aa' };
   return { barOut: '#f59e0b', barOk: '#22c55e', barNeg: '#ef4444', axis: '#25324a', label: '#94a3b8' };
 }
 
 function renderMonthlyChart(scheduleRows) {
   const container = document.getElementById('monthlyChartContainer');
   if (!container) return;
-
   if (!Array.isArray(scheduleRows) || !scheduleRows.length) {
     container.innerHTML = '<p class="muted">Sincronize para gerar o gráfico mês a mês.</p>';
     return;
   }
 
   const colors = getChartColorsForCurrentTheme();
-  const maxAbs = Math.max(
-    1,
-    ...scheduleRows.map((s) => Math.max(Math.abs(s.aPagar), Math.abs(s.saldoFinal)))
-  );
-
+  const maxAbs = Math.max(1, ...scheduleRows.map((s) => Math.max(Math.abs(s.aPagar), Math.abs(s.saldoFinal))));
   const barWidth = 22;
   const gap = 30;
   const chartHeight = 178;
@@ -1265,12 +1197,11 @@ function renderMonthlyChart(scheduleRows) {
     const x0 = 20 + idx * (barWidth * 2 + gap);
     const hPagar = Math.max(3, Math.round((Math.abs(item.aPagar) / maxAbs) * 95));
     const hSaldo = Math.max(3, Math.round((Math.abs(item.saldoFinal) / maxAbs) * 95));
-
     const yPagar = baseY - hPagar;
     const ySaldo = item.saldoFinal >= 0 ? baseY - hSaldo : baseY;
     const colorSaldo = item.saldoFinal >= 0 ? colors.barOk : colors.barNeg;
-
     const labelShort = formatMonthShort(item.mes);
+
     return `
       <g>
         <rect x="${x0}" y="${yPagar}" width="${barWidth}" height="${hPagar}" rx="4" fill="${colors.barOut}">
@@ -1289,7 +1220,7 @@ function renderMonthlyChart(scheduleRows) {
       <span><i class="dot-reemb" style="background:${colors.barOut};"></i> A pagar / saídas no mês</span>
       <span><i class="dot-proj" style="background:${colors.barOk};"></i> Saldo final na conta</span>
     </div>
-    <svg width="${width}" height="${chartHeight}" viewBox="0 0 ${width} ${chartHeight}" role="img" aria-label="Cronograma mensal de pagamentos e saldo na conta">
+    <svg width="${width}" height="${chartHeight}" viewBox="0 0 ${width} ${chartHeight}">
       <line x1="12" y1="${baseY}" x2="${width - 12}" y2="${baseY}" stroke="${colors.axis}" stroke-width="1.5" />
       ${barsSvg}
     </svg>
@@ -1299,7 +1230,6 @@ function renderMonthlyChart(scheduleRows) {
 function renderPortfolioChart(positions) {
   const container = document.getElementById('investimentosChartContainer');
   if (!container) return;
-
   if (!Array.isArray(positions) || !positions.length) {
     container.innerHTML = '<p class="muted">Adicione operações para visualizar o gráfico da carteira.</p>';
     return;
@@ -1331,7 +1261,7 @@ function renderPortfolioChart(positions) {
     <div class="chart-legend">
       <span><i class="dot-proj" style="background:${colors.barOk};"></i> Valor por ativo na carteira</span>
     </div>
-    <svg width="${width}" height="${chartHeight}" viewBox="0 0 ${width} ${chartHeight}" role="img" aria-label="Gráfico de alocação por ativo">
+    <svg width="${width}" height="${chartHeight}" viewBox="0 0 ${width} ${chartHeight}">
       <line x1="12" y1="${baseY}" x2="${width - 12}" y2="${baseY}" stroke="${colors.axis}" stroke-width="1.5" />
       ${barsSvg}
     </svg>
@@ -1339,14 +1269,9 @@ function renderPortfolioChart(positions) {
 }
 
 function renderExecutiveHome(currentRow, movs, faturasAbertas, parcelas, terceiros, currentMonthYm) {
-  const actionsEl = document.getElementById('homeCurrentMonthActions');
+  document.getElementById('homeCurrentMonthActions').innerHTML = renderReconcileButton(currentMonthYm);
+
   const summaryEl = document.getElementById('homeCurrentMonthSummary');
-  const recentEl = document.getElementById('homeRecentEntriesList');
-  const alertsEl = document.getElementById('homeUpcomingAlerts');
-  if (!actionsEl || !summaryEl || !alertsEl || !recentEl) return;
-
-  actionsEl.innerHTML = renderReconcileButton(currentMonthYm);
-
   if (currentRow) {
     const balClass = currentRow.saldoFinal >= 0 ? 'amt-pos' : 'amt-neg';
     summaryEl.innerHTML = `
@@ -1362,56 +1287,43 @@ function renderExecutiveHome(currentRow, movs, faturasAbertas, parcelas, terceir
         </div>
       </div>
     `;
-  } else {
-    summaryEl.innerHTML = '<p class="muted">Sincronize para visualizar o resumo executivo do mês atual.</p>';
   }
 
+  const recentEl = document.getElementById('homeRecentEntriesList');
   const recentMovs = [...movs].slice(-5).reverse();
   recentEl.innerHTML = recentMovs.length
     ? recentMovs.map((m) => {
-        const dtIso = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
-        const dtBr = formatDateBR(dtIso);
+        const txId = m.tx_id || m.id || '';
+        const dtBr = formatDateBR(m.data_caixa || m.data_competencia);
         const desc = canonicalizeText(m.descricao || 'Sem descrição');
         const acc = canonicalizeAccount(m.account_id);
         const t = String(m.tipo_mov || '').toUpperCase();
         const isPositive = (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE');
-        const sign = isPositive ? '+' : '-';
-        const amtClass = isPositive ? 'amt-pos' : 'amt-neg';
-        const badge = getMovementBadge(t);
 
         return `
           <div class="month-detail-row">
             <div>
-              <strong>${desc}</strong> ${badge}
+              <strong>${desc}</strong> ${getMovementBadge(t)}
               <span class="month-detail-meta">${dtBr} • ${acc}</span>
             </div>
             <div class="month-detail-right">
-              <strong class="${amtClass}">${sign} ${formatBRL(m.valor)}</strong>
-              <button type="button" class="btn-edit" data-edit-mov="${m.tx_id || ''}" title="Editar">✏️</button>
-              <button type="button" class="btn-delete" data-del-mov="${m.tx_id || ''}" data-del-label="${desc}" title="Excluir">🗑️</button>
+              <strong class="${isPositive ? 'amt-pos' : 'amt-neg'}">${isPositive ? '+' : '-'} ${formatBRL(m.valor)}</strong>
+              <button type="button" class="btn-edit" data-edit-mov="${txId}" title="Editar">✏️</button>
+              <button type="button" class="btn-delete" data-del-mov="${txId}" data-del-label="${desc}" title="Excluir">🗑️</button>
             </div>
           </div>
         `;
       }).join('')
     : '<p class="muted">Nenhum lançamento recente encontrado.</p>';
 
+  const alertsEl = document.getElementById('homeUpcomingAlerts');
   const alerts = [];
   if (faturasAbertas > 0) {
-    const openCardsSet = new Set(
-      parcelas
-        .filter((p) => String(p.status_fatura || '').toUpperCase() !== 'PAGA')
-        .map((p) => canonicalizeAccount(p.cartao_id || 'Cartão'))
-    );
-    const cardSummaryDue = Array.from(openCardsSet).map((cName) => {
-      const cyc = computeStatementCycleForCard(cName, new Date().toISOString().slice(0, 10), 0);
-      return `${cName}: ${formatDateBR(cyc.dueDateIso)}`;
-    }).join(' • ');
-
     alerts.push(`
       <div class="list-item">
         <div>
           <strong>Faturas de Cartão em Aberto</strong> <span class="badge badge-warn">Em Aberto</span>
-          <span class="month-detail-meta">${cardSummaryDue || 'Parcelas em aberto'}</span>
+          <span class="month-detail-meta">Total acumulado de parcelas não pagas</span>
         </div>
         <strong class="amt-neg">${formatBRL(faturasAbertas)}</strong>
       </div>
@@ -1421,8 +1333,8 @@ function renderExecutiveHome(currentRow, movs, faturasAbertas, parcelas, terceir
   const pendingByPerson = {};
   terceiros.forEach((t) => {
     if (String(t.status || '').toUpperCase() === 'QUITADO') return;
-    const person = normalizePersonName(t.pessoa_id || 'TERCEIRO');
-    pendingByPerson[person] = (pendingByPerson[person] || 0) + Number(t.valor_ajustado_cobrado || 0);
+    const p = normalizePersonName(t.pessoa_id || 'TERCEIRO');
+    pendingByPerson[p] = (pendingByPerson[p] || 0) + Number(t.valor_ajustado_cobrado || 0);
   });
 
   Object.entries(pendingByPerson).forEach(([person, val]) => {
@@ -1437,9 +1349,7 @@ function renderExecutiveHome(currentRow, movs, faturasAbertas, parcelas, terceir
     `);
   });
 
-  alertsEl.innerHTML = alerts.length
-    ? alerts.join('')
-    : '<p class="muted">Nenhuma pendência crítica ou vencimento em aberto.</p>';
+  alertsEl.innerHTML = alerts.length ? alerts.join('') : '<p class="muted">Nenhuma pendência crítica.</p>';
 }
 
 function renderMovementsSection(movs, todayIso, currentMonthYm) {
@@ -1459,21 +1369,15 @@ function renderMovementsSection(movs, todayIso, currentMonthYm) {
     });
 
     const prevMonth = state.movFilters.month;
-    monthSelect.innerHTML =
-      '<option value="ALL">Todos os meses</option>' +
-      Array.from(monthsSet)
-        .sort((a, b) => b.localeCompare(a))
-        .map((ym) => `<option value="${ym}">${formatMonthLabel(ym)}</option>`)
-        .join('');
+    monthSelect.innerHTML = '<option value="ALL">Todos os meses</option>' +
+      Array.from(monthsSet).sort((a, b) => b.localeCompare(a))
+        .map((ym) => `<option value="${ym}">${formatMonthLabel(ym)}</option>`).join('');
     monthSelect.value = monthsSet.has(prevMonth) ? prevMonth : 'ALL';
 
     const prevAcc = state.movFilters.account;
-    accountSelect.innerHTML =
-      '<option value="ALL">Todas as contas</option>' +
-      Array.from(accountsSet)
-        .sort()
-        .map((acc) => `<option value="${acc}">${acc}</option>`)
-        .join('');
+    accountSelect.innerHTML = '<option value="ALL">Todas as contas</option>' +
+      Array.from(accountsSet).sort()
+        .map((acc) => `<option value="${acc}">${acc}</option>`).join('');
     accountSelect.value = accountsSet.has(prevAcc) ? prevAcc : 'ALL';
   }
 
@@ -1498,22 +1402,15 @@ function renderMovementsSection(movs, todayIso, currentMonthYm) {
   });
 
   if (!filtered.length) {
-    movListEl.innerHTML = '<p class="muted">Nenhuma movimentação encontrada para os filtros selecionados.</p>';
+    movListEl.innerHTML = '<p class="muted">Nenhuma movimentação encontrada.</p>';
     return;
   }
 
-  const sorted = [...filtered].sort((a, b) => {
-    const da = String(a.data_caixa || a.data_competencia || '');
-    const db = String(b.data_caixa || b.data_competencia || '');
-    return db.localeCompare(da);
-  });
-
+  const sorted = [...filtered].sort((a, b) => String(b.data_caixa || b.data_competencia || '').localeCompare(String(a.data_caixa || a.data_competencia || '')));
   const groupsMap = new Map();
   sorted.forEach((m) => {
     const ym = String(m.data_caixa || m.data_competencia || '').slice(0, 7) || '0000-00';
-    if (!groupsMap.has(ym)) {
-      groupsMap.set(ym, { key: ym, netTotal: 0, items: [] });
-    }
+    if (!groupsMap.has(ym)) groupsMap.set(ym, { key: ym, netTotal: 0, items: [] });
     const g = groupsMap.get(ym);
     const v = Number(m.valor || 0);
     const t = String(m.tipo_mov || '').toUpperCase();
@@ -1528,29 +1425,26 @@ function renderMovementsSection(movs, todayIso, currentMonthYm) {
     const title = g.key === '0000-00' ? 'SEM DATA' : formatMonthLabel(g.key);
     const totalClass = g.netTotal < 0 ? 'month-balance-neg' : 'month-balance-ok';
     const isOpen = state.movFilters.month !== 'ALL' || state.movFilters.period !== 'ALL' || g.key === currentMonthYm || idx === 0;
-    const reconBtn = renderReconcileButton(g.key);
 
     const rowsHtml = g.items.map((m) => {
+      const txId = m.tx_id || m.id || '';
       const dtBr = formatDateBR(m.data_caixa || m.data_competencia);
       const desc = canonicalizeText(m.descricao || 'Sem descrição');
       const cat = canonicalizeCategory(m.categoria_id || '');
       const acc = canonicalizeAccount(m.account_id);
       const t = String(m.tipo_mov || '').toUpperCase();
       const isPositive = (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE');
-      const sign = isPositive ? '+' : '-';
-      const amtClass = isPositive ? 'amt-pos' : 'amt-neg';
-      const badge = getMovementBadge(t);
 
       return `
         <div class="month-detail-row">
           <div>
-            <strong>${desc}</strong> ${badge}
+            <strong>${desc}</strong> ${getMovementBadge(t)}
             <span class="month-detail-meta">${dtBr} • ${acc} • ${cat}</span>
           </div>
           <div class="month-detail-right">
-            <strong class="${amtClass}">${sign} ${formatBRL(m.valor)}</strong>
-            <button type="button" class="btn-edit" data-edit-mov="${m.tx_id || ''}" title="Editar movimentação">✏️</button>
-            <button type="button" class="btn-delete" data-del-mov="${m.tx_id || ''}" data-del-label="${desc}" title="Excluir movimentação">🗑️</button>
+            <strong class="${isPositive ? 'amt-pos' : 'amt-neg'}">${isPositive ? '+' : '-'} ${formatBRL(m.valor)}</strong>
+            <button type="button" class="btn-edit" data-edit-mov="${txId}" title="Editar">✏️</button>
+            <button type="button" class="btn-delete" data-del-mov="${txId}" data-del-label="${desc}" title="Excluir">🗑️</button>
           </div>
         </div>
       `;
@@ -1565,13 +1459,11 @@ function renderMovementsSection(movs, todayIso, currentMonthYm) {
             <span class="month-count">${g.items.length}</span>
           </span>
           <span class="month-header-right">
-            ${reconBtn}
+            ${renderReconcileButton(g.key)}
             <span class="${totalClass}">Saldo mês: ${formatBRL(g.netTotal)}</span>
           </span>
         </summary>
-        <div class="month-details">
-          ${rowsHtml}
-        </div>
+        <div class="month-details">${rowsHtml}</div>
       </details>
     `;
   }).join('');
@@ -1582,66 +1474,40 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
   const summaryContainer = document.getElementById('cartoesMonthlySummaryList');
   if (!detailContainer || !summaryContainer) return;
 
-  const openParcelas = parcelas.filter(
-    (p) => String(p.status_fatura || '').toUpperCase() !== 'PAGA'
-  );
-
+  const openParcelas = parcelas.filter((p) => String(p.status_fatura || '').toUpperCase() !== 'PAGA');
   if (!openParcelas.length) {
-    detailContainer.innerHTML = '<p class="muted">Nenhuma fatura ou parcela em aberto registrada.</p>';
-    summaryContainer.innerHTML = '<p class="muted">Nenhuma soma mensal de fatura disponível.</p>';
+    detailContainer.innerHTML = '<p class="muted">Nenhuma fatura ou parcela em aberto.</p>';
+    summaryContainer.innerHTML = '<p class="muted">Nenhuma soma mensal disponível.</p>';
     return;
   }
 
   const remainingByPurchase = {};
   openParcelas.forEach((p) => {
     const cid = String(p.compra_id || '');
-    if (!cid) return;
-    remainingByPurchase[cid] = (remainingByPurchase[cid] || 0) + Number(p.valor_fatura_banco || 0);
+    if (cid) remainingByPurchase[cid] = (remainingByPurchase[cid] || 0) + Number(p.valor_fatura_banco || 0);
   });
 
   const byMonth = new Map();
-
   openParcelas.forEach((p) => {
     const rawMonth = String(p.competencia_fatura || '').slice(0, 7);
     const monthKey = /^\d{4}-\d{2}$/.test(rawMonth) ? rawMonth : '0000-00';
     const cardName = canonicalizeAccount(p.cartao_id || 'Cartão');
-
     const totalBanco = Number(p.valor_fatura_banco || 0);
     const minhaParte = Number(p.minha_parte_liquida || 0);
     const parteTerceiros = Number(p.terceiro_liquido_a_receber || 0);
-    const desconto = Number(p.desconto_rateado || 0);
 
     if (!byMonth.has(monthKey)) {
-      byMonth.set(monthKey, {
-        monthKey,
-        totalGeral: 0,
-        totalMinhaParte: 0,
-        totalTerceiros: 0,
-        totalDesconto: 0,
-        cards: new Map()
-      });
+      byMonth.set(monthKey, { monthKey, totalGeral: 0, totalMinhaParte: 0, totalTerceiros: 0, cards: new Map() });
     }
-
     const mBucket = byMonth.get(monthKey);
     mBucket.totalGeral += totalBanco;
     mBucket.totalMinhaParte += minhaParte;
     mBucket.totalTerceiros += parteTerceiros;
-    mBucket.totalDesconto += desconto;
 
     if (!mBucket.cards.has(cardName)) {
-      const cyc = monthKey !== '0000-00'
-        ? computeStatementCycleForCard(cardName, `${monthKey}-10`, 0)
-        : { dueDateIso: '' };
-      mBucket.cards.set(cardName, {
-        cardName,
-        dueDateIso: cyc.dueDateIso,
-        totalCartao: 0,
-        minhaParteCartao: 0,
-        terceirosCartao: 0,
-        items: []
-      });
+      const cyc = monthKey !== '0000-00' ? computeStatementCycleForCard(cardName, `${monthKey}-10`, 0) : { dueDateIso: '' };
+      mBucket.cards.set(cardName, { cardName, dueDateIso: cyc.dueDateIso, totalCartao: 0, minhaParteCartao: 0, terceirosCartao: 0, items: [] });
     }
-
     const cBucket = mBucket.cards.get(cardName);
     cBucket.totalCartao += totalBanco;
     cBucket.minhaParteCartao += minhaParte;
@@ -1649,46 +1515,35 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
     cBucket.items.push(p);
   });
 
-  const sortedMonths = Array.from(byMonth.values()).sort((a, b) =>
-    a.monthKey.localeCompare(b.monthKey)
-  );
+  const sortedMonths = Array.from(byMonth.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 
   detailContainer.innerHTML = sortedMonths.map((m, idx) => {
     const monthTitle = m.monthKey === '0000-00' ? 'SEM MÊS DEFINIDO' : formatMonthLabel(m.monthKey);
     const isOpen = m.monthKey === currentMonthYm || idx === 0;
-    const cardsArr = Array.from(m.cards.values()).sort((a, b) =>
-      a.cardName.localeCompare(b.cardName)
-    );
+    const cardsArr = Array.from(m.cards.values()).sort((a, b) => a.cardName.localeCompare(b.cardName));
 
     const cardsHtml = cardsArr.map((c) => {
-      const dueBadge = c.dueDateIso
-        ? `<span class="badge badge-info">Venc. ${formatDateBR(c.dueDateIso)}</span>`
-        : '';
-
+      const dueBadge = c.dueDateIso ? `<span class="badge badge-info">Venc. ${formatDateBR(c.dueDateIso)}</span>` : '';
       const itemsHtml = c.items.map((item) => {
         const descParcela = canonicalizeText(item.descricao_parcela || 'Compra');
         const numP = Number(item.num_parcela || 1);
         const totP = Number(item.total_parcelas || 1);
         const minha = formatBRL(item.minha_parte_liquida || 0);
         const terc = Number(item.terceiro_liquido_a_receber || 0);
-        const desc = Number(item.desconto_rateado || 0);
         const pessoa = normalizePersonName(item.pessoa_id || '');
         const tercTxt = terc > 0 ? ` • ${pessoa || 'TERCEIRO'}: ${formatBRL(terc)}` : '';
-        const descTxt = desc > 0 ? ` • Desc.: ${formatBRL(desc)}` : '';
-        const saldoRestanteCompra = item.compra_id && totP > 1
-          ? ` • Saldo restante: ${formatBRL(remainingByPurchase[item.compra_id] || 0)}`
-          : '';
+        const restTxt = item.compra_id && totP > 1 ? ` • Saldo restante: ${formatBRL(remainingByPurchase[item.compra_id] || 0)}` : '';
 
         return `
           <div class="month-detail-row">
             <div>
               <strong>${descParcela}</strong> <span class="badge badge-info">${numP}/${totP}</span>
-              <span class="month-detail-meta">Minha parte: ${minha}${tercTxt}${descTxt}${saldoRestanteCompra}</span>
+              <span class="month-detail-meta">Minha parte: ${minha}${tercTxt}${restTxt}</span>
             </div>
             <div class="month-detail-right">
               <strong>${formatBRL(item.valor_fatura_banco)}</strong>
-              <button type="button" class="btn-edit" data-edit-card-purchase="${item.compra_id || ''}" data-card-desc="${descParcela}" data-card-name="${c.cardName}" title="Editar compra">✏️</button>
-              <button type="button" class="btn-delete" data-del-card-purchase="${item.compra_id || ''}" data-del-label="${descParcela}" title="Excluir compra no cartão">🗑️</button>
+              <button type="button" class="btn-edit" data-edit-card-purchase="${item.compra_id || ''}" data-card-desc="${descParcela}" data-card-name="${c.cardName}" title="Editar">✏️</button>
+              <button type="button" class="btn-delete" data-del-card-purchase="${item.compra_id || ''}" data-del-label="${descParcela}" title="Excluir">🗑️</button>
             </div>
           </div>
         `;
@@ -1704,9 +1559,7 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
             <span>Minha parte: <strong>${formatBRL(c.minhaParteCartao)}</strong></span>
             <span>Terceiros / Rateio: <strong>${formatBRL(c.terceirosCartao)}</strong></span>
           </div>
-          <div class="list-stack" style="gap: 6px;">
-            ${itemsHtml}
-          </div>
+          <div class="list-stack" style="gap: 6px;">${itemsHtml}</div>
         </div>
       `;
     }).join('');
@@ -1726,31 +1579,19 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
     `;
   }).join('');
 
-  summaryContainer.innerHTML = sortedMonths.map((m) => {
-    const monthTitle = m.monthKey === '0000-00' ? 'SEM MÊS DEFINIDO' : formatMonthLabel(m.monthKey);
-    return `
-      <div class="month-block">
-        <div class="month-header">
-          <span class="month-title">${monthTitle}</span>
-          <span class="month-balance-ok">Soma Total: ${formatBRL(m.totalGeral)}</span>
-        </div>
-        <div class="month-summary-box">
-          <div class="summary-pill">
-            <span>Fatura Total (Cartões)</span>
-            <strong>${formatBRL(m.totalGeral)}</strong>
-          </div>
-          <div class="summary-pill">
-            <span>Minha Parte (Própria)</span>
-            <strong class="amt-pos">${formatBRL(m.totalMinhaParte)}</strong>
-          </div>
-          <div class="summary-pill">
-            <span>Terceiros / Rateio</span>
-            <strong style="color: var(--warning);">${formatBRL(m.totalTerceiros)}</strong>
-          </div>
-        </div>
+  summaryContainer.innerHTML = sortedMonths.map((m) => `
+    <div class="month-block">
+      <div class="month-header">
+        <span class="month-title">${m.monthKey === '0000-00' ? 'SEM MÊS DEFINIDO' : formatMonthLabel(m.monthKey)}</span>
+        <span class="month-balance-ok">Soma Total: ${formatBRL(m.totalGeral)}</span>
       </div>
-    `;
-  }).join('');
+      <div class="month-summary-box">
+        <div class="summary-pill"><span>Fatura Total</span><strong>${formatBRL(m.totalGeral)}</strong></div>
+        <div class="summary-pill"><span>Minha Parte</span><strong class="amt-pos">${formatBRL(m.totalMinhaParte)}</strong></div>
+        <div class="summary-pill"><span>Terceiros / Rateio</span><strong style="color: var(--warning);">${formatBRL(m.totalTerceiros)}</strong></div>
+      </div>
+    </div>
+  `).join('');
 }
 
 function renderThirdPartiesSection(terceiros, currentMonthYm) {
@@ -1759,9 +1600,7 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
   if (!summaryGridEl || !listEl) return;
 
   const balanceByPerson = {};
-  state.people.forEach((p) => {
-    balanceByPerson[p] = 0;
-  });
+  state.people.forEach((p) => { balanceByPerson[p] = 0; });
 
   terceiros.forEach((t) => {
     const person = normalizePersonName(t.pessoa_id || 'TERCEIRO');
@@ -1773,21 +1612,18 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
 
   const personEntries = Object.entries(balanceByPerson);
   summaryGridEl.innerHTML = personEntries.length
-    ? personEntries
-        .sort((a, b) => b[1] - a[1])
-        .map(([person, pending]) => {
-          const isQuitado = pending <= 0.009;
-          return `
-            <div class="bank-card">
-              <div class="bank-card-top">
-                <span class="bank-name">${person}</span>
-                ${isQuitado ? '<span class="badge badge-in">Quitado</span>' : '<span class="badge badge-warn">Pendente</span>'}
-              </div>
-              <strong class="bank-balance ${isQuitado ? 'pos' : 'warn'}">${formatBRL(pending)}</strong>
+    ? personEntries.sort((a, b) => b[1] - a[1]).map(([person, pending]) => {
+        const isQuitado = pending <= 0.009;
+        return `
+          <div class="bank-card">
+            <div class="bank-card-top">
+              <span class="bank-name">${person}</span>
+              ${isQuitado ? '<span class="badge badge-in">Quitado</span>' : '<span class="badge badge-warn">Pendente</span>'}
             </div>
-          `;
-        })
-        .join('')
+            <strong class="bank-balance ${isQuitado ? 'pos' : 'warn'}">${formatBRL(pending)}</strong>
+          </div>
+        `;
+      }).join('')
     : '<p class="muted">Nenhuma pessoa cadastrada.</p>';
 
   const filtered = state.selectedPersonFilter === 'ALL'
@@ -1800,14 +1636,13 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
   }
 
   const groupsMap = new Map();
-  [...filtered].reverse().forEach((t) => {
+  [...filtered].forEach((t, idx) => {
+    const itemWithKey = Object.assign({}, t, { _uiKey: t.razao_id || t.id || `idx_${idx}` });
     const ym = String(t.competencia || '').slice(0, 7) || '0000-00';
-    if (!groupsMap.has(ym)) {
-      groupsMap.set(ym, { key: ym, total: 0, items: [] });
-    }
+    if (!groupsMap.has(ym)) groupsMap.set(ym, { key: ym, total: 0, items: [] });
     const g = groupsMap.get(ym);
     g.total += Number(t.valor_ajustado_cobrado || 0);
-    g.items.push(t);
+    g.items.push(itemWithKey);
   });
 
   const groups = Array.from(groupsMap.values()).sort((a, b) => b.key.localeCompare(a.key));
@@ -1818,18 +1653,17 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
 
     const rowsHtml = g.items.map((t) => {
       const desc = canonicalizeText(t.descricao || t.tipo_evento || 'Lançamento');
-      const statusBadge = getStatusBadge(t.status);
       const person = normalizePersonName(t.pessoa_id || '-');
       return `
         <div class="month-detail-row">
           <div>
-            <strong>${desc}</strong> ${statusBadge}
+            <strong>${desc}</strong> ${getStatusBadge(t.status)}
             <span class="month-detail-meta">Pessoa: ${person} • Competência: ${formatMonthShort(t.competencia)}</span>
           </div>
           <div class="month-detail-right">
             <strong>${formatBRL(t.valor_ajustado_cobrado)}</strong>
-            <button type="button" class="btn-edit" data-edit-third="${t.razao_id || ''}" title="Editar">✏️</button>
-            <button type="button" class="btn-delete" data-del-third="${t.razao_id || ''}" data-del-label="${desc}" title="Excluir">🗑️</button>
+            <button type="button" class="btn-edit" data-edit-third="${t._uiKey}" title="Editar">✏️</button>
+            <button type="button" class="btn-delete" data-del-third="${t.razao_id || t.id || ''}" data-del-label="${desc}" data-del-person="${person}" data-del-desc-raw="${t.descricao || ''}" data-del-comp="${t.competencia || ''}" data-del-val="${Number(t.valor_ajustado_cobrado || 0)}" title="Excluir">🗑️</button>
           </div>
         </div>
       `;
@@ -1845,9 +1679,7 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
           </span>
           <span class="month-balance-ok">Total: ${formatBRL(g.total)}</span>
         </summary>
-        <div class="month-details">
-          ${rowsHtml}
-        </div>
+        <div class="month-details">${rowsHtml}</div>
       </details>
     `;
   }).join('');
@@ -1867,7 +1699,7 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
     if (kpiProvEl) kpiProvEl.textContent = formatBRL(0);
     renderPortfolioChart([]);
     consolidatedEl.innerHTML = '<p class="muted">Nenhuma posição consolidada ainda.</p>';
-    historyEl.innerHTML = '<p class="muted">Nenhuma operação de investimento registrada na base ainda.</p>';
+    historyEl.innerHTML = '<p class="muted">Nenhuma operação registrada ainda.</p>';
     return;
   }
 
@@ -1880,9 +1712,7 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
   }
 
   const chronologicalOps = [...investimentos].sort((a, b) =>
-    String(a.data_op || a.data_operacao || '').localeCompare(
-      String(b.data_op || b.data_operacao || '')
-    )
+    String(a.data_op || a.data_operacao || '').localeCompare(String(b.data_op || b.data_operacao || ''))
   );
 
   const posMap = new Map();
@@ -1895,15 +1725,8 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
     const val = Number(op.valor_total || 0);
 
     if (!posMap.has(ticker)) {
-      posMap.set(ticker, {
-        ticker,
-        classe: op.classe_ativo || 'ACAO',
-        qtdLiquida: 0,
-        custoTotal: 0,
-        proventos: 0
-      });
+      posMap.set(ticker, { ticker, classe: op.classe_ativo || 'ACAO', qtdLiquida: 0, custoTotal: 0, proventos: 0 });
     }
-
     const pos = posMap.get(ticker);
     if (tipo === 'COMPRA' || tipo === 'APORTE' || tipo === 'SALDO_INICIAL') {
       pos.qtdLiquida += qtd;
@@ -1927,11 +1750,8 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
       return Object.assign({}, p, { pm, cotAtual, valorAtual });
     });
 
-  const somaValorAtual = positions.reduce((acc, p) => acc + p.valorAtual, 0);
-  const somaCustoLiquido = positions.reduce((acc, p) => acc + p.custoTotal, 0);
-
-  if (kpiValorEl) kpiValorEl.textContent = formatBRL(somaValorAtual);
-  if (kpiCustoEl) kpiCustoEl.textContent = formatBRL(somaCustoLiquido);
+  if (kpiValorEl) kpiValorEl.textContent = formatBRL(positions.reduce((a, p) => a + p.valorAtual, 0));
+  if (kpiCustoEl) kpiCustoEl.textContent = formatBRL(positions.reduce((a, p) => a + p.custoTotal, 0));
   if (kpiProvEl) kpiProvEl.textContent = formatBRL(totalProventos);
 
   renderPortfolioChart(positions);
@@ -1939,9 +1759,6 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
   consolidatedEl.innerHTML = positions.map((p) => {
     const cotLabel = p.cotAtual > 0 ? formatBRL(p.cotAtual) : '—';
     const diff = p.valorAtual - p.custoTotal;
-    const diffSign = diff >= 0 ? '+' : '';
-    const diffCls = diff >= 0 ? 'amt-pos' : 'amt-neg';
-
     return `
       <div class="list-item">
         <div>
@@ -1951,7 +1768,7 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
         <div class="month-detail-right">
           <div style="text-align: right;">
             <strong>${formatBRL(p.valorAtual)}</strong>
-            <span class="month-detail-meta ${diffCls}">${diffSign}${formatBRL(diff)}</span>
+            <span class="month-detail-meta ${diff >= 0 ? 'amt-pos' : 'amt-neg'}">${diff >= 0 ? '+' : ''}${formatBRL(diff)}</span>
           </div>
           <button type="button" class="btn-delete" data-del-asset="${p.ticker}" title="Excluir ativo inteiro">🗑️</button>
         </div>
@@ -1960,6 +1777,7 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
   }).join('');
 
   historyEl.innerHTML = [...investimentos].reverse().map((op) => {
+    const opId = op.op_inv_id || op.id || '';
     const ticker = normalizeTicker(op.ticker || op.nome_ativo);
     const dtBr = formatDateBR(op.data_op || op.data_operacao);
     const tipo = String(op.tipo_op || '').toUpperCase();
@@ -1969,7 +1787,7 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
     const isBuy = tipo === 'COMPRA' || tipo === 'APORTE' || tipo === 'SALDO_INICIAL';
     const badge = isBuy
       ? '<span class="badge badge-info">Compra</span>'
-      : tipo === 'VENDA' || tipo === 'RESGATE'
+      : (tipo === 'VENDA' || tipo === 'RESGATE')
         ? '<span class="badge badge-warn">Venda</span>'
         : '<span class="badge badge-in">Provento</span>';
 
@@ -1981,133 +1799,12 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
         </div>
         <div class="month-detail-right">
           <strong>${formatBRL(val)}</strong>
-          <button type="button" class="btn-edit" data-edit-inv="${op.op_inv_id || ''}" title="Editar ordem">✏️</button>
-          <button type="button" class="btn-delete" data-del-inv="${op.op_inv_id || ''}" data-del-label="${ticker}" title="Excluir ordem">🗑️</button>
+          <button type="button" class="btn-edit" data-edit-inv="${opId}" title="Editar ordem">✏️</button>
+          <button type="button" class="btn-delete" data-del-inv="${opId}" data-del-label="${ticker}" title="Excluir ordem">🗑️</button>
         </div>
       </div>
     `;
   }).join('');
-}
-
-function bindDynamicEditDeleteButtons(movs, parcelas, terceiros, investimentos) {
-  document.querySelectorAll('[data-del-mov]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleDeleteMovement(btn.dataset.delMov, btn.dataset.delLabel);
-    });
-  });
-
-  document.querySelectorAll('[data-edit-mov]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const m = movs.find((x) => String(x.tx_id) === String(btn.dataset.editMov));
-      if (!m) return;
-      openEditModal({
-        title: 'Editar Movimentação',
-        kind: 'MOVEMENT',
-        id: m.tx_id,
-        desc: m.descricao,
-        date: String(m.data_caixa || m.data_competencia || '').slice(0, 10),
-        valor: m.valor,
-        accountOrPerson: canonicalizeAccount(m.account_id),
-        showDate: true,
-        showVal: true,
-        showAccountOrPerson: true,
-        showQty: false,
-        showStatus: false
-      });
-    });
-  });
-
-  document.querySelectorAll('[data-del-card-purchase]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleDeleteCardPurchase(btn.dataset.delCardPurchase, btn.dataset.delLabel);
-    });
-  });
-
-  document.querySelectorAll('[data-edit-card-purchase]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openEditModal({
-        title: 'Editar Compra no Cartão',
-        kind: 'CARD_PURCHASE',
-        id: btn.dataset.editCardPurchase,
-        desc: btn.dataset.cardDesc.replace(/\s*\(\d+\/\d+\)$/, ''),
-        accountOrPerson: btn.dataset.cardName,
-        showDate: false,
-        showVal: false,
-        showAccountOrPerson: true,
-        showQty: false,
-        showStatus: false
-      });
-    });
-  });
-
-  document.querySelectorAll('[data-del-third]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleDeleteThirdParty(btn.dataset.delThird, btn.dataset.delLabel);
-    });
-  });
-
-  document.querySelectorAll('[data-edit-third]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const t = terceiros.find((x) => String(x.razao_id) === String(btn.dataset.editThird));
-      if (!t) return;
-      openEditModal({
-        title: 'Editar Lançamento de Terceiro',
-        kind: 'THIRD_PARTY',
-        id: t.razao_id,
-        desc: t.descricao,
-        valor: t.valor_ajustado_cobrado,
-        accountOrPerson: normalizePersonName(t.pessoa_id),
-        status: t.status || 'PENDENTE',
-        showDate: false,
-        showVal: true,
-        showAccountOrPerson: true,
-        showQty: false,
-        showStatus: true
-      });
-    });
-  });
-
-  document.querySelectorAll('[data-del-asset]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleDeleteInvestmentAsset(btn.dataset.delAsset);
-    });
-  });
-
-  document.querySelectorAll('[data-del-inv]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleDeleteInvestmentOp(btn.dataset.delInv, btn.dataset.delLabel);
-    });
-  });
-
-  document.querySelectorAll('[data-edit-inv]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const op = investimentos.find((x) => String(x.op_inv_id) === String(btn.dataset.editInv));
-      if (!op) return;
-      openEditModal({
-        title: 'Editar Operação de Investimento',
-        kind: 'INVESTMENT',
-        id: op.op_inv_id,
-        desc: op.ticker || op.nome_ativo,
-        date: String(op.data_op || op.data_operacao || '').slice(0, 10),
-        valor: op.valor_total,
-        qty: op.quantidade,
-        showDate: true,
-        showVal: true,
-        showAccountOrPerson: false,
-        showQty: true,
-        showStatus: false
-      });
-    });
-  });
 }
 
 function renderAll() {
@@ -2166,19 +1863,14 @@ function renderAll() {
     }
   });
 
-  // Aba Contas
   const bankGridEl = document.getElementById('bankBalancesGrid');
   if (bankGridEl) {
     const bancos = Object.entries(saldosPorBanco);
     bankGridEl.innerHTML = bancos.length
-      ? bancos
-          .sort((a, b) => b[1] - a[1])
-          .map(([nomeBanco, saldo]) => {
-            const cls = saldo >= 0 ? 'pos' : 'neg';
-            return `<div class="bank-card"><span class="bank-name">${nomeBanco}</span><strong class="bank-balance ${cls}">${formatBRL(saldo)}</strong></div>`;
-          })
-          .join('')
-      : '<p class="muted">Nenhuma conta movimentada até a data de hoje.</p>';
+      ? bancos.sort((a, b) => b[1] - a[1]).map(([nomeBanco, saldo]) =>
+          `<div class="bank-card"><span class="bank-name">${nomeBanco}</span><strong class="bank-balance ${saldo >= 0 ? 'pos' : 'neg'}">${formatBRL(saldo)}</strong></div>`
+        ).join('')
+      : '<p class="muted">Nenhuma conta movimentada até hoje.</p>';
   }
 
   const faturasPorMes = {};
@@ -2186,32 +1878,21 @@ function renderAll() {
     if (String(p.status_fatura || '').toUpperCase() === 'PAGA') return;
     const comp = String(p.competencia_fatura || '').slice(0, 7);
     const val = Number(p.valor_fatura_banco || 0);
-    const descParcela = canonicalizeText(p.descricao_parcela || 'Parcela');
-    const cartao = canonicalizeAccount(p.cartao_id || 'Cartão');
     if (comp) {
       faturasPorMes[comp] = (faturasPorMes[comp] || 0) + val;
-      pushMesItem(
-        comp,
-        `Fatura ${cartao} • ${descParcela}`,
-        `- ${formatBRL(val)}`,
-        false
-      );
+      pushMesItem(comp, `Fatura ${canonicalizeAccount(p.cartao_id)} • ${canonicalizeText(p.descricao_parcela || 'Parcela')}`, `- ${formatBRL(val)}`, false);
     }
   });
 
-  const faturasAbertas = parcelas
-    .filter((p) => String(p.status_fatura || '').toUpperCase() !== 'PAGA')
+  const faturasAbertas = parcelas.filter((p) => String(p.status_fatura || '').toUpperCase() !== 'PAGA')
     .reduce((acc, p) => acc + Number(p.valor_fatura_banco || 0), 0);
 
-  const aReceber = terceiros
-    .filter((t) => String(t.status || '').toUpperCase() !== 'QUITADO')
+  const aReceber = terceiros.filter((t) => String(t.status || '').toUpperCase() !== 'QUITADO')
     .reduce((acc, t) => acc + Number(t.valor_ajustado_cobrado || 0), 0);
 
   const invTotal = investimentos.reduce((acc, op) => {
     const v = Number(op.valor_total || 0);
-    return String(op.tipo_op).toUpperCase() === 'VENDA' || String(op.tipo_op).toUpperCase() === 'RESGATE'
-      ? acc - v
-      : acc + v;
+    return (String(op.tipo_op).toUpperCase() === 'VENDA' || String(op.tipo_op).toUpperCase() === 'RESGATE') ? acc - v : acc + v;
   }, 0);
 
   document.getElementById('kpiCaixa').textContent = formatBRL(caixaHoje);
@@ -2232,9 +1913,7 @@ function renderAll() {
     const faturasMes = Number(faturasPorMes[mes] || 0);
     const aPagar = saidasMov + faturasMes;
 
-    if (mes !== currentMonthYm) {
-      saldoAcumulado += entradas - aPagar;
-    }
+    if (mes !== currentMonthYm) saldoAcumulado += entradas - aPagar;
 
     return {
       mes,
@@ -2242,7 +1921,6 @@ function renderAll() {
       entradas,
       faturasMes,
       aPagar,
-      reembolsosPrevistos: Number(p.reembolsos_a_receber || 0),
       saldoFinal: saldoAcumulado,
       detalhes: itensPorMes[mes] || []
     };
@@ -2253,40 +1931,33 @@ function renderAll() {
 
   const projFullEl = document.getElementById('projecaoFullList');
   if (projFullEl && scheduleRows.length) {
-    projFullEl.innerHTML = scheduleRows
-      .map((item) => {
-        const balClass = item.saldoFinal >= 0 ? 'month-balance-ok' : 'month-balance-neg';
-        const reconBtn = renderReconcileButton(item.mes);
-        const isOpen = item.mes === currentMonthYm;
-        const detailsHtml = item.detalhes.length
-          ? `<div class="month-details">${item.detalhes.map((d) => {
-              const amtCls = d.isPositive ? 'amt-pos' : 'amt-neg';
-              return `<div class="month-detail-row"><span>${d.label}</span><strong class="${amtCls}">${d.valorStr}</strong></div>`;
-            }).join('')}</div>`
-          : '<div class="month-details"><span class="muted">Sem lançamentos programados neste mês.</span></div>';
+    projFullEl.innerHTML = scheduleRows.map((item) => {
+      const balClass = item.saldoFinal >= 0 ? 'month-balance-ok' : 'month-balance-neg';
+      const detailsHtml = item.detalhes.length
+        ? `<div class="month-details">${item.detalhes.map((d) => `<div class="month-detail-row"><span>${d.label}</span><strong class="${d.isPositive ? 'amt-pos' : 'amt-neg'}">${d.valorStr}</strong></div>`).join('')}</div>`
+        : '<div class="month-details"><span class="muted">Sem lançamentos programados neste mês.</span></div>';
 
-        return `
-          <details class="month-block" ${isOpen ? 'open' : ''}>
-            <summary class="month-header">
-              <span class="month-header-left">
-                <span class="month-chevron">▶</span>
-                <span class="month-title">${item.tituloMes}</span>
-              </span>
-              <span class="month-header-right">
-                ${reconBtn}
-                <span class="${balClass}">Saldo: ${formatBRL(item.saldoFinal)}</span>
-              </span>
-            </summary>
-            <div class="month-metrics">
-              <div class="month-metric"><span>Entradas</span><strong class="amt-pos">${formatBRL(item.entradas)}</strong></div>
-              <div class="month-metric"><span>A pagar (desp./faturas)</span><strong class="amt-neg">${formatBRL(item.aPagar)}</strong></div>
-              <div class="month-metric"><span>Faturas cartão</span><strong>${formatBRL(item.faturasMes)}</strong></div>
-            </div>
-            ${detailsHtml}
-          </details>
-        `;
-      })
-      .join('');
+      return `
+        <details class="month-block" ${item.mes === currentMonthYm ? 'open' : ''}>
+          <summary class="month-header">
+            <span class="month-header-left">
+              <span class="month-chevron">▶</span>
+              <span class="month-title">${item.tituloMes}</span>
+            </span>
+            <span class="month-header-right">
+              ${renderReconcileButton(item.mes)}
+              <span class="${balClass}">Saldo: ${formatBRL(item.saldoFinal)}</span>
+            </span>
+          </summary>
+          <div class="month-metrics">
+            <div class="month-metric"><span>Entradas</span><strong class="amt-pos">${formatBRL(item.entradas)}</strong></div>
+            <div class="month-metric"><span>A pagar (desp./faturas)</span><strong class="amt-neg">${formatBRL(item.aPagar)}</strong></div>
+            <div class="month-metric"><span>Faturas cartão</span><strong>${formatBRL(item.faturasMes)}</strong></div>
+          </div>
+          ${detailsHtml}
+        </details>
+      `;
+    }).join('');
   }
 
   renderMonthlyChart(scheduleRows);
@@ -2298,21 +1969,15 @@ function renderAll() {
       toggleMonthReconciled(btn.dataset.reconYm);
     });
   });
-
-  bindDynamicEditDeleteButtons(movs, parcelas, terceiros, investimentos);
 }
 
 /* ==========================================================================
-   6. NAVEGAÇÃO E EVENT LISTENERS
+   6. INICIALIZAÇÃO E LISTENERS
    ========================================================================== */
 
 function switchTab(tabName) {
-  document.querySelectorAll('.nav-tab').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === tabName);
-  });
-  document.querySelectorAll('.tab-panel').forEach((panel) => {
-    panel.classList.toggle('active', panel.id === `tab-${tabName}`);
-  });
+  document.querySelectorAll('.nav-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tabName));
+  document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('active', panel.id === `tab-${tabName}`));
 }
 
 function openModal() {
@@ -2326,92 +1991,81 @@ function closeModal() {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadSavedState();
+  document.addEventListener('click', handleGlobalDelegatedClicks);
 
   document.querySelectorAll('.nav-tab').forEach((btn) => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
-  const btnGoToFluxo = document.getElementById('btnGoToFluxo');
-  if (btnGoToFluxo) {
-    btnGoToFluxo.addEventListener('click', () => switchTab('projecao'));
-  }
-
-  const btnGoToMovs = document.getElementById('btnGoToMovs');
-  if (btnGoToMovs) {
-    btnGoToMovs.addEventListener('click', () => switchTab('movimentacoes'));
-  }
-
+  document.getElementById('btnGoToFluxo')?.addEventListener('click', () => switchTab('projecao'));
+  document.getElementById('btnGoToMovs')?.addEventListener('click', () => switchTab('movimentacoes'));
   document.getElementById('btnOpenQuickAdd').addEventListener('click', openModal);
   document.getElementById('btnCloseModal').addEventListener('click', closeModal);
   document.getElementById('btnCloseEditModal').addEventListener('click', closeEditModal);
   document.getElementById('btnSync').addEventListener('click', syncFromBackend);
-  document.getElementById('configForm').addEventListener('submit', saveConfig);
-  document.getElementById('quickAddForm').addEventListener('submit', handleQuickAddSubmit);
   document.getElementById('editEntryForm').addEventListener('submit', handleSaveEditSubmit);
+  document.getElementById('quickAddForm').addEventListener('submit', handleQuickAddSubmit);
 
-  const appearanceForm = document.getElementById('appearanceForm');
-  if (appearanceForm) appearanceForm.addEventListener('submit', saveAppearance);
+  document.getElementById('configForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const apiUrl = document.getElementById('cfgApiUrl').value.trim();
+    const apiKey = document.getElementById('cfgApiKey').value.trim();
+    if (!apiUrl || !apiKey) return showToast('Preencha URL e Chave.', 'warn');
+    state.config = { apiUrl, apiKey };
+    localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(state.config));
+    updateSyncBadge('Configuração salva • Sincronizando...', 'ok');
+    showToast('Conexão salva.', 'success');
+    syncFromBackend();
+  });
 
-  const addCardRuleForm = document.getElementById('addCardRuleForm');
-  if (addCardRuleForm) addCardRuleForm.addEventListener('submit', handleAddCardRule);
+  document.getElementById('appearanceForm')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    applyTheme(document.getElementById('cfgTheme').value);
+    renderAll();
+    showToast('Tema atualizado.', 'success');
+  });
 
-  const filterPeriod = document.getElementById('filterMovPeriod');
-  const filterMonth = document.getElementById('filterMovMonth');
-  const filterType = document.getElementById('filterMovType');
-  const filterAccount = document.getElementById('filterMovAccount');
-  const filterSearch = document.getElementById('filterMovSearch');
-  const clearFiltersBtn = document.getElementById('btnClearMovFilters');
+  document.getElementById('addCardRuleForm')?.addEventListener('submit', handleAddCardRule);
 
-  if (filterPeriod) {
-    filterPeriod.addEventListener('change', () => {
-      state.movFilters.period = filterPeriod.value;
+  ['filterMovPeriod', 'filterMovMonth', 'filterMovType', 'filterMovAccount', 'filterMovSearch'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', (e) => {
+      const keyMap = {
+        filterMovPeriod: 'period',
+        filterMovMonth: 'month',
+        filterMovType: 'type',
+        filterMovAccount: 'account',
+        filterMovSearch: 'search'
+      };
+      state.movFilters[keyMap[id]] = e.target.value;
       renderAll();
     });
-  }
-  if (filterMonth) {
-    filterMonth.addEventListener('change', () => {
-      state.movFilters.month = filterMonth.value;
+    document.getElementById(id)?.addEventListener('change', (e) => {
+      const keyMap = {
+        filterMovPeriod: 'period',
+        filterMovMonth: 'month',
+        filterMovType: 'type',
+        filterMovAccount: 'account',
+        filterMovSearch: 'search'
+      };
+      state.movFilters[keyMap[id]] = e.target.value;
       renderAll();
     });
-  }
-  if (filterType) {
-    filterType.addEventListener('change', () => {
-      state.movFilters.type = filterType.value;
-      renderAll();
-    });
-  }
-  if (filterAccount) {
-    filterAccount.addEventListener('change', () => {
-      state.movFilters.account = filterAccount.value;
-      renderAll();
-    });
-  }
-  if (filterSearch) {
-    filterSearch.addEventListener('input', () => {
-      state.movFilters.search = filterSearch.value.trim();
-      renderAll();
-    });
-  }
-  if (clearFiltersBtn) {
-    clearFiltersBtn.addEventListener('click', () => {
-      state.movFilters = { period: 'ALL', month: 'ALL', type: 'ALL', account: 'ALL', search: '' };
-      if (filterPeriod) filterPeriod.value = 'ALL';
-      if (filterMonth) filterMonth.value = 'ALL';
-      if (filterType) filterType.value = 'ALL';
-      if (filterAccount) filterAccount.value = 'ALL';
-      if (filterSearch) filterSearch.value = '';
-      renderAll();
-    });
-  }
+  });
 
-  const addPersonForm = document.getElementById('addPersonForm');
-  if (addPersonForm) addPersonForm.addEventListener('submit', handleAddPerson);
+  document.getElementById('btnClearMovFilters')?.addEventListener('click', () => {
+    state.movFilters = { period: 'ALL', month: 'ALL', type: 'ALL', account: 'ALL', search: '' };
+    ['filterMovPeriod', 'filterMovMonth', 'filterMovType', 'filterMovAccount'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = 'ALL';
+    });
+    const searchEl = document.getElementById('filterMovSearch');
+    if (searchEl) searchEl.value = '';
+    renderAll();
+  });
 
-  const investForm = document.getElementById('investForm');
-  if (investForm) investForm.addEventListener('submit', handleInvestSubmit);
-
-  const btnQuotes = document.getElementById('btnUpdateQuotes');
-  if (btnQuotes) btnQuotes.addEventListener('click', handleUpdateQuotes);
+  document.getElementById('addPersonForm')?.addEventListener('submit', handleAddPerson);
+  document.getElementById('investForm')?.addEventListener('submit', handleInvestSubmit);
+  document.getElementById('btnUpdateQuotes')?.addEventListener('click', handleUpdateQuotes);
 
   ['txTipo', 'txResponsavel', 'txConta', 'txValor', 'txMinhaParte', 'txDesconto', 'txIsRecorrente', 'txData', 'txParcelas'].forEach((id) => {
     const el = document.getElementById(id);
