@@ -1,7 +1,8 @@
 const STORAGE_KEYS = {
   CONFIG: 'athena_cfg_v1',
   CACHE: 'athena_cache_v1',
-  PEOPLE: 'athena_people_v1'
+  PEOPLE: 'athena_people_v1',
+  RECONCILED: 'athena_reconciled_months_v1'
 };
 
 const DEFAULT_PEOPLE = ['MAE', 'ERIC', 'ANDERSON'];
@@ -36,25 +37,64 @@ const MONTH_NAMES_SHORT = {
   '12': 'Dez'
 };
 
-const TEXT_NORMALIZATION_MAP = {
+const CANONICAL_TEXT_MAP = {
   salario: 'Salário',
+  '13 salario': '13º Salário',
+  '13o salario': '13º Salário',
   'free lancer': 'Freelancer',
   freelancer: 'Freelancer',
   supermercado: 'Supermercado',
   ifood: 'Ifood',
+  'delivery / ifood': 'Delivery / Ifood',
   alimentacao: 'Alimentação',
   reembolso: 'Reembolso',
   placa_solar: 'Placa Solar',
   'placa solar': 'Placa Solar',
   moto: 'Moto',
-  seguros: 'Seguros'
+  'transporte / moto': 'Transporte / Moto',
+  seguros: 'Seguros',
+  'saude / seguros': 'Saúde / Seguros',
+  'casa / contas': 'Casa / Contas',
+  investimentos: 'Investimentos',
+  educacao: 'Educação',
+  'lazer / jogos': 'Lazer / Jogos',
+  outros: 'Outros',
+  geral: 'Outros'
+};
+
+const CANONICAL_ACCOUNT_MAP = {
+  nubank: 'Nubank',
+  nu: 'Nubank',
+  nb: 'Nubank',
+  'c6 bank': 'C6 Bank',
+  c6: 'C6 Bank',
+  'mercado pago': 'Mercado Pago',
+  mp: 'Mercado Pago',
+  btg: 'BTG',
+  'btg pactual': 'BTG',
+  'banco do brasil': 'Banco do Brasil',
+  bb: 'Banco do Brasil',
+  caixa: 'Caixa',
+  'caixa economica': 'Caixa',
+  'caixa econômica': 'Caixa',
+  itau: 'Itaú',
+  itaú: 'Itaú',
+  bradesco: 'Bradesco',
+  santander: 'Santander',
+  inter: 'Inter',
+  sicredi: 'Sicredi',
+  banrisul: 'Banrisul',
+  picpay: 'PicPay',
+  xp: 'XP',
+  dinheiro: 'Dinheiro',
+  carteira: 'Dinheiro'
 };
 
 const state = {
   config: { apiUrl: '', apiKey: '' },
   snapshot: null,
   people: [...DEFAULT_PEOPLE],
-  homeScheduleExpanded: false,
+  reconciledMonths: {},
   selectedPersonFilter: 'ALL',
   movFilters: {
     month: 'ALL',
@@ -65,8 +105,54 @@ const state = {
 };
 
 /* ==========================================================================
-   1. UTILITÁRIOS DE FORMATAÇÃO E NORMALIZAÇÃO
+   1. PADRONIZAÇÃO ESTRITA DE CADASTROS, DATAS E BADGES
    ========================================================================== */
+
+function stripDiacritics(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function cleanSpaces(str) {
+  return String(str || '').trim().replace(/\s+/g, ' ');
+}
+
+function canonicalizeText(text) {
+  const cleaned = cleanSpaces(text);
+  if (!cleaned) return '';
+  const key = stripDiacritics(cleaned).toLowerCase();
+  if (CANONICAL_TEXT_MAP[key]) {
+    return CANONICAL_TEXT_MAP[key];
+  }
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function canonicalizeCategory(cat) {
+  const cleaned = cleanSpaces(cat);
+  if (!cleaned) return 'Outros';
+  const key = stripDiacritics(cleaned).toLowerCase();
+  return CANONICAL_TEXT_MAP[key] || (cleaned.charAt(0).toUpperCase() + cleaned.slice(1));
+}
+
+function canonicalizeAccount(acc) {
+  const cleaned = cleanSpaces(acc);
+  if (!cleaned) return 'Sem Conta';
+  const key = stripDiacritics(cleaned).toLowerCase();
+  return CANONICAL_ACCOUNT_MAP[key] || cleaned;
+}
+
+function normalizePersonName(name) {
+  const base = stripDiacritics(cleanSpaces(name))
+    .toUpperCase()
+    .replace(/\s+/g, '_');
+  if (base === 'MAE' || base === 'MINHA_MAE') return 'MAE';
+  return base;
+}
+
+function normalizeTicker(ticker) {
+  return stripDiacritics(cleanSpaces(ticker)).toUpperCase().replace(/\s+/g, '');
+}
 
 function formatBRL(value) {
   const num = Number(value || 0);
@@ -100,21 +186,20 @@ function formatMonthShort(ym) {
   return `${nome}/${parts[0].slice(2)}`;
 }
 
-function normalizeTextDisplay(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return '';
-  const lower = raw.toLowerCase();
-  if (TEXT_NORMALIZATION_MAP[lower]) {
-    return TEXT_NORMALIZATION_MAP[lower];
-  }
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
-}
+function addMonthsToDateIso(dateIso, monthsToAdd) {
+  const parts = String(dateIso || '').slice(0, 10).split('-').map(Number);
+  if (parts.length !== 3) return dateIso;
+  const year = parts[0];
+  const monthIdx = parts[1] - 1 + monthsToAdd;
+  const day = parts[2];
 
-function normalizePersonName(name) {
-  return String(name || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, '_');
+  const targetDate = new Date(Date.UTC(year, monthIdx, 1));
+  const maxDaysInTarget = new Date(
+    Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+  targetDate.setUTCDate(Math.min(day, maxDaysInTarget));
+
+  return targetDate.toISOString().slice(0, 10);
 }
 
 function getMovementBadge(tipoMov) {
@@ -130,9 +215,32 @@ function getMovementBadge(tipoMov) {
 function getStatusBadge(status) {
   const s = String(status || '').toUpperCase();
   if (s === 'QUITADO' || s === 'PAGA' || s === 'REALIZADO') {
-    return `<span class="badge badge-in">${normalizeTextDisplay(s.toLowerCase())}</span>`;
+    return '<span class="badge badge-in">Quitado</span>';
   }
-  return `<span class="badge badge-warn">${normalizeTextDisplay((s || 'PENDENTE').toLowerCase())}</span>`;
+  return '<span class="badge badge-warn">Pendente</span>';
+}
+
+function isMonthReconciled(ym) {
+  return Boolean(state.reconciledMonths && state.reconciledMonths[ym]);
+}
+
+function toggleMonthReconciled(ym) {
+  if (!ym || ym === '0000-00') return;
+  state.reconciledMonths[ym] = !isMonthReconciled(ym);
+  localStorage.setItem(STORAGE_KEYS.RECONCILED, JSON.stringify(state.reconciledMonths));
+  renderAll();
+  showToast(
+    state.reconciledMonths[ym]
+      ? `Mês ${formatMonthShort(ym)} marcado como Conferido ✓`
+      : `Mês ${formatMonthShort(ym)} reaberto para conferência.`,
+    state.reconciledMonths[ym] ? 'success' : 'info'
+  );
+}
+
+function renderReconcileButton(ym) {
+  if (!ym || ym === '0000-00') return '';
+  const checked = isMonthReconciled(ym);
+  return `<button type="button" class="recon-btn ${checked ? 'checked' : 'open'}" data-recon-ym="${ym}" title="Alternar status de conciliação mensal">${checked ? 'Conferido ✓' : 'Em aberto'}</button>`;
 }
 
 function showToast(message, type = 'info') {
@@ -171,6 +279,10 @@ function loadSavedState() {
       if (Array.isArray(parsedPeople) && parsedPeople.length) {
         state.people = parsedPeople;
       }
+    }
+    const rawRecon = localStorage.getItem(STORAGE_KEYS.RECONCILED);
+    if (rawRecon) {
+      state.reconciledMonths = JSON.parse(rawRecon) || {};
     }
   } catch (err) {
     console.warn('Falha ao carregar armazenamento local:', err);
@@ -279,7 +391,7 @@ async function postToBackend(action, payload) {
 }
 
 /* ==========================================================================
-   3. PESSOAS / TERCEIROS E CONTROLES DO MODAL
+   3. CADASTRO DE PESSOAS E REGRAS DO MODAL (+ LANÇAR)
    ========================================================================== */
 
 function syncPeopleListFromData() {
@@ -287,7 +399,7 @@ function syncPeopleListFromData() {
   if (Array.isArray(state.people)) {
     state.people.forEach((p) => {
       const n = normalizePersonName(p);
-      if (n) set.add(n);
+      if (n && n !== 'EU') set.add(n);
     });
   }
   const terceiros = (state.snapshot && Array.isArray(state.snapshot.terceiros_razao))
@@ -362,7 +474,7 @@ function handleAddPerson(event) {
   }
   input.value = '';
   renderPeopleControls();
-  showToast(`Pessoa "${clean}" adicionada com sucesso.`, 'success');
+  showToast(`Pessoa "${clean}" padronizada e adicionada.`, 'success');
 }
 
 function evaluateSplitWarning() {
@@ -399,15 +511,25 @@ function updateQuickFormVisibility() {
   const tipo = document.getElementById('txTipo').value;
   const resp = document.getElementById('txResponsavel').value;
   const contaVal = document.getElementById('txConta').value;
+  const isRec = document.getElementById('txIsRecorrente').checked;
+
   const cardBox = document.getElementById('cardExtraFields');
   const splitBox = document.getElementById('splitFields');
+  const recurrenceBox = document.getElementById('recurrenceBox');
+  const recurrenceFields = document.getElementById('recurrenceFields');
   const novaPessoaInput = document.getElementById('txNovaPessoa');
   const outroBancoInput = document.getElementById('txOutroBanco');
 
   if (tipo === 'COMPRA_CARTAO') {
     cardBox.classList.remove('hidden');
+    recurrenceBox.classList.add('hidden');
   } else {
     cardBox.classList.add('hidden');
+    recurrenceBox.classList.remove('hidden');
+  }
+
+  if (recurrenceFields) {
+    recurrenceFields.classList.toggle('hidden', !isRec);
   }
 
   if (tipo === 'COMPRA_CARTAO' && resp === 'MAE_COMPARTILHADO') {
@@ -430,10 +552,9 @@ function updateQuickFormVisibility() {
 function resolveSelectedAccount() {
   const contaVal = document.getElementById('txConta').value;
   if (contaVal === '__OUTRO_BANCO__') {
-    const custom = document.getElementById('txOutroBanco').value.trim();
-    return custom || 'Outro Banco';
+    return canonicalizeAccount(document.getElementById('txOutroBanco').value || 'Outro Banco');
   }
-  return contaVal;
+  return canonicalizeAccount(contaVal);
 }
 
 function resolveSelectedPerson() {
@@ -451,7 +572,7 @@ function resolveSelectedPerson() {
 }
 
 /* ==========================================================================
-   4. AÇÕES DE ESCRITA / EXCLUSÃO NO BACKEND
+   4. ESCRITA (INCLUINDO RECORRÊNCIAS) E EXCLUSÃO NO BACKEND
    ========================================================================== */
 
 async function handleQuickAddSubmit(event) {
@@ -462,12 +583,12 @@ async function handleQuickAddSubmit(event) {
 
   try {
     const tipo = document.getElementById('txTipo').value;
-    const descricao = normalizeTextDisplay(document.getElementById('txDescricao').value);
+    const descricao = canonicalizeText(document.getElementById('txDescricao').value);
     const valor = Number(document.getElementById('txValor').value);
     const data = document.getElementById('txData').value;
-    const categoria = document.getElementById('txCategoria').value || 'Outros';
+    const categoria = canonicalizeCategory(document.getElementById('txCategoria').value);
     const conta = resolveSelectedAccount();
-    const idemKey = `pwa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const baseKey = `pwa_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
     if (tipo === 'COMPRA_CARTAO') {
       const parcelas = Math.max(1, parseInt(document.getElementById('txParcelas').value || '1', 10));
@@ -492,13 +613,13 @@ async function handleQuickAddSubmit(event) {
         valorParteTerceiro = Math.max(0, valor - valorMinhaParte);
       } else {
         modoDivisao = 'INTEGRAL_TERCEIRO';
-        pessoaId = resp;
+        pessoaId = normalizePersonName(resp);
         valorMinhaParte = 0;
         valorParteTerceiro = valor;
       }
 
       const res = await postToBackend('createCardPurchase', {
-        idempotency_key: idemKey,
+        idempotency_key: baseKey,
         data_compra: data,
         cartao_id: conta,
         descricao,
@@ -517,36 +638,72 @@ async function handleQuickAddSubmit(event) {
       if (res && res.alerta_divergencia) {
         showToast(`Registrado com aviso: ${res.alerta_divergencia}`, 'warn');
       } else {
-        showToast('Compra no cartão registrada com sucesso!', 'success');
+        showToast(
+          parcelas > 1
+            ? `Compra parcelada em ${parcelas}x registrada com sucesso!`
+            : 'Compra no cartão registrada com sucesso!',
+          'success'
+        );
       }
-    } else if (tipo === 'REEMBOLSO') {
-      const pessoaId = resolveSelectedPerson();
-      const cleanPerson = (pessoaId === 'EU' || pessoaId === 'MAE_COMPARTILHADO') ? 'MAE' : pessoaId;
-
-      await postToBackend('recordRefund', {
-        idempotency_key: idemKey,
-        pessoa_id: cleanPerson,
-        competencia: data.slice(0, 7),
-        data_recebimento: data,
-        descricao,
-        categoria_id: categoria,
-        account_id: conta,
-        valor_recebido: valor
-      });
-      showToast('Reembolso registrado com sucesso!', 'success');
     } else {
-      await postToBackend('createTransaction', {
-        idempotency_key: idemKey,
-        data_competencia: data,
-        data_caixa: data,
-        descricao,
-        tipo_mov: tipo,
-        categoria_id: categoria,
-        account_id: conta,
-        valor,
-        status: 'REALIZADO'
-      });
-      showToast('Movimentação registrada com sucesso!', 'success');
+      const isRecorrente = document.getElementById('txIsRecorrente').checked;
+      const totalMeses = isRecorrente
+        ? Math.min(24, Math.max(2, parseInt(document.getElementById('txRecorrenciaMeses').value || '12', 10)))
+        : 1;
+
+      if (tipo === 'REEMBOLSO') {
+        const pessoaId = resolveSelectedPerson();
+        const cleanPerson = (pessoaId === 'EU' || pessoaId === 'MAE_COMPARTILHADO')
+          ? 'MAE'
+          : normalizePersonName(pessoaId);
+
+        for (let i = 0; i < totalMeses; i += 1) {
+          const dtOcorrencia = addMonthsToDateIso(data, i);
+          const descOcorrencia = totalMeses > 1 ? `${descricao} (${i + 1}/${totalMeses})` : descricao;
+          btn.textContent = totalMeses > 1 ? `Salvando ${i + 1}/${totalMeses}...` : 'Salvando...';
+
+          await postToBackend('recordRefund', {
+            idempotency_key: `${baseKey}_m${i + 1}`,
+            pessoa_id: cleanPerson,
+            competencia: dtOcorrencia.slice(0, 7),
+            data_recebimento: dtOcorrencia,
+            descricao: descOcorrencia,
+            categoria_id: categoria,
+            account_id: conta,
+            valor_recebido: valor
+          });
+        }
+        showToast(
+          totalMeses > 1
+            ? `${totalMeses} reembolsos recorrentes registrados!`
+            : 'Reembolso registrado com sucesso!',
+          'success'
+        );
+      } else {
+        for (let i = 0; i < totalMeses; i += 1) {
+          const dtOcorrencia = addMonthsToDateIso(data, i);
+          const descOcorrencia = totalMeses > 1 ? `${descricao} (${i + 1}/${totalMeses})` : descricao;
+          btn.textContent = totalMeses > 1 ? `Salvando ${i + 1}/${totalMeses}...` : 'Salvando...';
+
+          await postToBackend('createTransaction', {
+            idempotency_key: `${baseKey}_m${i + 1}`,
+            data_competencia: dtOcorrencia,
+            data_caixa: dtOcorrencia,
+            descricao: descOcorrencia,
+            tipo_mov: tipo,
+            categoria_id: categoria,
+            account_id: conta,
+            valor,
+            status: 'REALIZADO'
+          });
+        }
+        showToast(
+          totalMeses > 1
+            ? `Recorrência mensal (${totalMeses} meses) lançada com sucesso!`
+            : 'Movimentação registrada com sucesso!',
+          'success'
+        );
+      }
     }
 
     document.getElementById('quickAddForm').reset();
@@ -589,7 +746,7 @@ async function handleInvestSubmit(event) {
   try {
     const tipoOp = document.getElementById('invTipoOp').value;
     const classeAtivo = document.getElementById('invClasse').value;
-    const ticker = document.getElementById('invTicker').value.trim().toUpperCase();
+    const ticker = normalizeTicker(document.getElementById('invTicker').value);
     const dataOp = document.getElementById('invData').value;
     const qtd = Number(document.getElementById('invQtd').value || 0);
     const valorTotal = Number(document.getElementById('invValorTotal').value || 0);
@@ -633,7 +790,7 @@ async function handleUpdateQuotes() {
 }
 
 /* ==========================================================================
-   5. RENDERIZAÇÃO DE GRÁFICO, ACCORDIONS E ABAS
+   5. RENDERIZAÇÃO POR SEÇÃO (INÍCIO EXECUTIVO, CONTAS, MOVS, CARTÕES, ETC.)
    ========================================================================== */
 
 function renderMonthlyChart(scheduleRows) {
@@ -691,11 +848,75 @@ function renderMonthlyChart(scheduleRows) {
   `;
 }
 
+function renderExecutiveHome(currentRow, faturasAbertas, terceiros, currentMonthYm) {
+  const actionsEl = document.getElementById('homeCurrentMonthActions');
+  const summaryEl = document.getElementById('homeCurrentMonthSummary');
+  const alertsEl = document.getElementById('homeUpcomingAlerts');
+  if (!actionsEl || !summaryEl || !alertsEl) return;
+
+  actionsEl.innerHTML = renderReconcileButton(currentMonthYm);
+
+  if (currentRow) {
+    const balClass = currentRow.saldoFinal >= 0 ? 'amt-pos' : 'amt-neg';
+    summaryEl.innerHTML = `
+      <div class="month-block">
+        <div class="month-header">
+          <span class="month-title">${currentRow.tituloMes}</span>
+          <span class="${currentRow.saldoFinal >= 0 ? 'month-balance-ok' : 'month-balance-neg'}">Saldo previsto: ${formatBRL(currentRow.saldoFinal)}</span>
+        </div>
+        <div class="month-metrics">
+          <div class="month-metric"><span>Entradas no Mês</span><strong class="amt-pos">${formatBRL(currentRow.entradas)}</strong></div>
+          <div class="month-metric"><span>Saídas + Faturas</span><strong class="amt-neg">${formatBRL(currentRow.aPagar)}</strong></div>
+          <div class="month-metric"><span>Resultado Líquido</span><strong class="${balClass}">${formatBRL(currentRow.entradas - currentRow.aPagar)}</strong></div>
+        </div>
+      </div>
+    `;
+  } else {
+    summaryEl.innerHTML = '<p class="muted">Sincronize para visualizar o resumo executivo do mês atual.</p>';
+  }
+
+  // Alertas próximos (faturas em aberto + pendências de terceiros)
+  const alerts = [];
+  if (faturasAbertas > 0) {
+    alerts.push(`
+      <div class="list-item">
+        <div>
+          <strong>Faturas de Cartão em Aberto</strong>
+          <span class="month-detail-meta">Total acumulado de parcelas não pagas</span>
+        </div>
+        <strong class="amt-neg">${formatBRL(faturasAbertas)}</strong>
+      </div>
+    `);
+  }
+
+  const pendingByPerson = {};
+  terceiros.forEach((t) => {
+    if (String(t.status || '').toUpperCase() === 'QUITADO') return;
+    const person = normalizePersonName(t.pessoa_id || 'TERCEIRO');
+    pendingByPerson[person] = (pendingByPerson[person] || 0) + Number(t.valor_ajustado_cobrado || 0);
+  });
+
+  Object.entries(pendingByPerson).forEach(([person, val]) => {
+    alerts.push(`
+      <div class="list-item">
+        <div>
+          <strong>Reembolso Pendente • ${person}</strong> <span class="badge badge-warn">Pendente</span>
+          <span class="month-detail-meta">Valor a receber de terceiro</span>
+        </div>
+        <strong style="color: var(--warning);">${formatBRL(val)}</strong>
+      </div>
+    `);
+  });
+
+  alertsEl.innerHTML = alerts.length
+    ? alerts.join('')
+    : '<p class="muted">Nenhuma pendência crítica ou vencimento em aberto.</p>';
+}
+
 function renderMovementsSection(movs, currentMonthYm) {
   const movListEl = document.getElementById('movimentacoesList');
   if (!movListEl) return;
 
-  // Popula opções dinâmicas de mês e conta nos filtros
   const monthSelect = document.getElementById('filterMovMonth');
   const accountSelect = document.getElementById('filterMovAccount');
   if (monthSelect && accountSelect) {
@@ -704,8 +925,8 @@ function renderMovementsSection(movs, currentMonthYm) {
     movs.forEach((m) => {
       const ym = String(m.data_caixa || m.data_competencia || '').slice(0, 7);
       if (/^\d{4}-\d{2}$/.test(ym)) monthsSet.add(ym);
-      const acc = String(m.account_id || '').trim();
-      if (acc) accountsSet.add(acc);
+      const acc = canonicalizeAccount(m.account_id);
+      if (acc && acc !== 'Sem Conta') accountsSet.add(acc);
     });
 
     const prevMonth = state.movFilters.month;
@@ -727,13 +948,12 @@ function renderMovementsSection(movs, currentMonthYm) {
     accountSelect.value = accountsSet.has(prevAcc) ? prevAcc : 'ALL';
   }
 
-  // Aplica filtros ativos
   const filtered = movs.filter((m) => {
     const ym = String(m.data_caixa || m.data_competencia || '').slice(0, 7);
     const tipo = String(m.tipo_mov || '').toUpperCase();
-    const acc = String(m.account_id || '').trim();
-    const descNorm = normalizeTextDisplay(m.descricao || '').toLowerCase();
-    const catNorm = normalizeTextDisplay(m.categoria_id || '').toLowerCase();
+    const acc = canonicalizeAccount(m.account_id);
+    const descNorm = canonicalizeText(m.descricao || '').toLowerCase();
+    const catNorm = canonicalizeCategory(m.categoria_id || '').toLowerCase();
 
     if (state.movFilters.month !== 'ALL' && ym !== state.movFilters.month) return false;
     if (state.movFilters.type !== 'ALL' && tipo !== state.movFilters.type) return false;
@@ -750,7 +970,6 @@ function renderMovementsSection(movs, currentMonthYm) {
     return;
   }
 
-  // Ordena por data decrescente e agrupa por mês
   const sorted = [...filtered].sort((a, b) => {
     const da = String(a.data_caixa || a.data_competencia || '');
     const db = String(b.data_caixa || b.data_competencia || '');
@@ -777,11 +996,13 @@ function renderMovementsSection(movs, currentMonthYm) {
     const title = g.key === '0000-00' ? 'SEM DATA' : formatMonthLabel(g.key);
     const totalClass = g.netTotal < 0 ? 'month-balance-neg' : 'month-balance-ok';
     const isOpen = state.movFilters.month !== 'ALL' || g.key === currentMonthYm || idx === 0;
+    const reconBtn = renderReconcileButton(g.key);
 
     const rowsHtml = g.items.map((m) => {
       const dtBr = formatDateBR(m.data_caixa || m.data_competencia);
-      const desc = normalizeTextDisplay(m.descricao || 'Sem descrição');
-      const cat = normalizeTextDisplay(m.categoria_id || '');
+      const desc = canonicalizeText(m.descricao || 'Sem descrição');
+      const cat = canonicalizeCategory(m.categoria_id || '');
+      const acc = canonicalizeAccount(m.account_id);
       const t = String(m.tipo_mov || '').toUpperCase();
       const isPositive = (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE');
       const sign = isPositive ? '+' : '-';
@@ -792,7 +1013,7 @@ function renderMovementsSection(movs, currentMonthYm) {
         <div class="month-detail-row">
           <div>
             <strong>${desc}</strong> ${badge}
-            <span class="month-detail-meta">${dtBr} • ${m.account_id || 'Sem Conta'}${cat ? ` • ${cat}` : ''}</span>
+            <span class="month-detail-meta">${dtBr} • ${acc} • ${cat}</span>
           </div>
           <div class="month-detail-right">
             <strong class="${amtClass}">${sign} ${formatBRL(m.valor)}</strong>
@@ -810,7 +1031,10 @@ function renderMovementsSection(movs, currentMonthYm) {
             <span class="month-title">${title}</span>
             <span class="month-count">${g.items.length}</span>
           </span>
-          <span class="${totalClass}">Saldo mês: ${formatBRL(g.netTotal)}</span>
+          <span class="month-header-right">
+            ${reconBtn}
+            <span class="${totalClass}">Saldo mês: ${formatBRL(g.netTotal)}</span>
+          </span>
         </summary>
         <div class="month-details">
           ${rowsHtml}
@@ -842,12 +1066,20 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
     return;
   }
 
+  // Calcula saldo restante por compra_id para parcelamentos de longo prazo (ex.: 4/72)
+  const remainingByPurchase = {};
+  openParcelas.forEach((p) => {
+    const cid = String(p.compra_id || '');
+    if (!cid) return;
+    remainingByPurchase[cid] = (remainingByPurchase[cid] || 0) + Number(p.valor_fatura_banco || 0);
+  });
+
   const byMonth = new Map();
 
   openParcelas.forEach((p) => {
     const rawMonth = String(p.competencia_fatura || '').slice(0, 7);
     const monthKey = /^\d{4}-\d{2}$/.test(rawMonth) ? rawMonth : '0000-00';
-    const cardName = String(p.cartao_id || 'Cartão').trim() || 'Cartão';
+    const cardName = canonicalizeAccount(p.cartao_id || 'Cartão');
 
     const totalBanco = Number(p.valor_fatura_banco || 0);
     const minhaParte = Number(p.minha_parte_liquida || 0);
@@ -901,18 +1133,25 @@ function renderCardsSeparatedByMonthAndCard(parcelas, currentMonthYm) {
 
     const cardsHtml = cardsArr.map((c) => {
       const itemsHtml = c.items.map((item) => {
-        const descParcela = normalizeTextDisplay(item.descricao_parcela || 'Compra');
+        const descParcela = canonicalizeText(item.descricao_parcela || 'Compra');
+        const numP = Number(item.num_parcela || 1);
+        const totP = Number(item.total_parcelas || 1);
         const minha = formatBRL(item.minha_parte_liquida || 0);
         const terc = Number(item.terceiro_liquido_a_receber || 0);
         const desc = Number(item.desconto_rateado || 0);
-        const tercTxt = terc > 0 ? ` • ${item.pessoa_id || 'Terceiro'}: ${formatBRL(terc)}` : '';
+        const pessoa = normalizePersonName(item.pessoa_id || '');
+        const tercTxt = terc > 0 ? ` • ${pessoa || 'TERCEIRO'}: ${formatBRL(terc)}` : '';
         const descTxt = desc > 0 ? ` • Desc.: ${formatBRL(desc)}` : '';
+
+        const saldoRestanteCompra = item.compra_id && totP > 1
+          ? ` • Saldo restante parcelamento: ${formatBRL(remainingByPurchase[item.compra_id] || 0)}`
+          : '';
 
         return `
           <div class="month-detail-row">
             <div>
-              <strong>${descParcela}</strong> <span class="badge badge-info">${item.num_parcela || 1}/${item.total_parcelas || 1}</span>
-              <span class="month-detail-meta">Minha parte: ${minha}${tercTxt}${descTxt}</span>
+              <strong>${descParcela}</strong> <span class="badge badge-info">${numP}/${totP}</span>
+              <span class="month-detail-meta">Minha parte: ${minha}${tercTxt}${descTxt}${saldoRestanteCompra}</span>
             </div>
             <strong>${formatBRL(item.valor_fatura_banco)}</strong>
           </div>
@@ -983,29 +1222,39 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
   const listEl = document.getElementById('terceirosList');
   if (!summaryGridEl || !listEl) return;
 
-  // Resumo de saldo pendente por pessoa (sempre visível)
-  const pendingByPerson = {};
-  terceiros.forEach((t) => {
-    const status = String(t.status || '').toUpperCase();
-    if (status === 'QUITADO') return;
-    const person = normalizePersonName(t.pessoa_id || 'TERCEIRO');
-    pendingByPerson[person] = (pendingByPerson[person] || 0) + Number(t.valor_ajustado_cobrado || 0);
+  // Calcula situação por pessoa (Pendente vs. Quitado R$ 0,00)
+  const balanceByPerson = {};
+  state.people.forEach((p) => {
+    balanceByPerson[p] = 0;
   });
 
-  const pendingEntries = Object.entries(pendingByPerson);
-  summaryGridEl.innerHTML = pendingEntries.length
-    ? pendingEntries
-        .sort((a, b) => b[1] - a[1])
-        .map(([person, total]) => `
-          <div class="bank-card">
-            <span class="bank-name">${person}</span>
-            <strong class="bank-balance warn">${formatBRL(total)}</strong>
-          </div>
-        `)
-        .join('')
-    : '<p class="muted">Nenhum saldo pendente de terceiros no momento.</p>';
+  terceiros.forEach((t) => {
+    const person = normalizePersonName(t.pessoa_id || 'TERCEIRO');
+    if (!(person in balanceByPerson)) balanceByPerson[person] = 0;
+    if (String(t.status || '').toUpperCase() !== 'QUITADO') {
+      balanceByPerson[person] += Number(t.valor_ajustado_cobrado || 0);
+    }
+  });
 
-  // Filtra extrato pela pessoa selecionada nos chips
+  const personEntries = Object.entries(balanceByPerson);
+  summaryGridEl.innerHTML = personEntries.length
+    ? personEntries
+        .sort((a, b) => b[1] - a[1])
+        .map(([person, pending]) => {
+          const isQuitado = pending <= 0.009;
+          return `
+            <div class="bank-card">
+              <div class="bank-card-top">
+                <span class="bank-name">${person}</span>
+                ${isQuitado ? '<span class="badge badge-in">Quitado</span>' : '<span class="badge badge-warn">Pendente</span>'}
+              </div>
+              <strong class="bank-balance ${isQuitado ? 'pos' : 'warn'}">${formatBRL(pending)}</strong>
+            </div>
+          `;
+        })
+        .join('')
+    : '<p class="muted">Nenhuma pessoa cadastrada.</p>';
+
   const filtered = state.selectedPersonFilter === 'ALL'
     ? terceiros
     : terceiros.filter((t) => normalizePersonName(t.pessoa_id) === state.selectedPersonFilter);
@@ -1033,13 +1282,14 @@ function renderThirdPartiesSection(terceiros, currentMonthYm) {
     const isOpen = g.key === currentMonthYm || idx === 0;
 
     const rowsHtml = g.items.map((t) => {
-      const desc = normalizeTextDisplay(t.descricao || t.tipo_evento || 'Lançamento');
+      const desc = canonicalizeText(t.descricao || t.tipo_evento || 'Lançamento');
       const statusBadge = getStatusBadge(t.status);
+      const person = normalizePersonName(t.pessoa_id || '-');
       return `
         <div class="month-detail-row">
           <div>
             <strong>${desc}</strong> ${statusBadge}
-            <span class="month-detail-meta">Pessoa: ${t.pessoa_id || '-'} • Competência: ${formatMonthShort(t.competencia)}</span>
+            <span class="month-detail-meta">Pessoa: ${person} • Competência: ${formatMonthShort(t.competencia)}</span>
           </div>
           <strong>${formatBRL(t.valor_ajustado_cobrado)}</strong>
         </div>
@@ -1075,19 +1325,24 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
     return;
   }
 
-  // Mapeia cotações em cache por ticker (se houver)
   const quoteMap = {};
   if (Array.isArray(cotacoesCache)) {
     cotacoesCache.forEach((c) => {
-      const t = String(c.ticker || '').toUpperCase().trim();
+      const t = normalizeTicker(c.ticker);
       if (t) quoteMap[t] = Number(c.preco_atual || 0);
     });
   }
 
-  // Agrupa posição consolidada por ticker
+  // Ordena cronologicamente para calcular preço médio ponderado corretamente
+  const chronologicalOps = [...investimentos].sort((a, b) =>
+    String(a.data_op || a.data_operacao || '').localeCompare(
+      String(b.data_op || b.data_operacao || '')
+    )
+  );
+
   const posMap = new Map();
-  investimentos.forEach((op) => {
-    const ticker = String(op.ticker || op.nome_ativo || 'ATIVO').toUpperCase().trim();
+  chronologicalOps.forEach((op) => {
+    const ticker = normalizeTicker(op.ticker || op.nome_ativo || 'ATIVO');
     const tipo = String(op.tipo_op || '').toUpperCase();
     const qtd = Number(op.quantidade || 0);
     const val = Number(op.valor_total || 0);
@@ -1122,7 +1377,7 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
   consolidatedEl.innerHTML = positions.map((p) => {
     const pm = p.qtdLiquida > 0 ? p.custoTotal / p.qtdLiquida : 0;
     const cotAtual = quoteMap[p.ticker] || 0;
-    const valorMercado = cotAtual > 0 && p.qtdLiquida > 0 ? cotAtual * p.qtdLiquida : p.custoTotal;
+    const valorAtual = cotAtual > 0 && p.qtdLiquida > 0 ? cotAtual * p.qtdLiquida : p.custoTotal;
     const cotInfo = cotAtual > 0 ? ` • Cotação: ${formatBRL(cotAtual)}` : '';
     const provInfo = p.proventos > 0 ? ` • Proventos: ${formatBRL(p.proventos)}` : '';
 
@@ -1130,18 +1385,21 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
       <div class="list-item">
         <div>
           <strong>${p.ticker}</strong> <span class="badge badge-info">${p.classe}</span>
-          <span class="month-detail-meta">Qtd: ${p.qtdLiquida} • PM: ${formatBRL(pm)}${cotInfo}${provInfo}</span>
+          <span class="month-detail-meta">Qtd líquida: ${p.qtdLiquida} • PM: ${formatBRL(pm)}${cotInfo}${provInfo}</span>
         </div>
-        <strong>${formatBRL(valorMercado)}</strong>
+        <strong>${formatBRL(valorAtual)}</strong>
       </div>
     `;
   }).join('');
 
-  // Histórico de ordens/operações
   historyEl.innerHTML = [...investimentos].reverse().map((op) => {
+    const ticker = normalizeTicker(op.ticker || op.nome_ativo);
     const dtBr = formatDateBR(op.data_op || op.data_operacao);
     const tipo = String(op.tipo_op || '').toUpperCase();
-    const isBuy = tipo === 'COMPRA' || tipo === 'APORTE';
+    const qtd = Number(op.quantidade || 0);
+    const val = Number(op.valor_total || 0);
+    const precoUnit = Number(op.preco_unitario || (qtd > 0 ? val / qtd : val));
+    const isBuy = tipo === 'COMPRA' || tipo === 'APORTE' || tipo === 'SALDO_INICIAL';
     const badge = isBuy
       ? '<span class="badge badge-info">Compra</span>'
       : tipo === 'VENDA' || tipo === 'RESGATE'
@@ -1151,10 +1409,10 @@ function renderInvestmentsSection(investimentos, cotacoesCache) {
     return `
       <div class="list-item">
         <div>
-          <strong>${op.ticker || op.nome_ativo}</strong> ${badge}
-          <span class="month-detail-meta">${dtBr} • ${op.classe_ativo || ''} • Qtd: ${op.quantidade || 0}</span>
+          <strong>${ticker}</strong> ${badge}
+          <span class="month-detail-meta">${dtBr} • Qtd: ${qtd} • Preço unit.: ${formatBRL(precoUnit)}</span>
         </div>
-        <strong>${formatBRL(op.valor_total)}</strong>
+        <strong>${formatBRL(val)}</strong>
       </div>
     `;
   }).join('');
@@ -1192,8 +1450,8 @@ function renderAll() {
     const dtIso = String(m.data_caixa || m.data_competencia || '').slice(0, 10);
     const dtBr = formatDateBR(dtIso);
     const mesKey = dtIso.slice(0, 7);
-    const banco = String(m.account_id || 'Sem Conta').trim() || 'Sem Conta';
-    const desc = normalizeTextDisplay(m.descricao || t);
+    const banco = canonicalizeAccount(m.account_id);
+    const desc = canonicalizeText(m.descricao || t);
 
     let delta = 0;
     if (t === 'RECEITA' || t === 'REEMBOLSO' || t === 'RESGATE') delta = v;
@@ -1236,12 +1494,13 @@ function renderAll() {
     if (String(p.status_fatura || '').toUpperCase() === 'PAGA') return;
     const comp = String(p.competencia_fatura || '').slice(0, 7);
     const val = Number(p.valor_fatura_banco || 0);
-    const descParcela = normalizeTextDisplay(p.descricao_parcela || 'Parcela');
+    const descParcela = canonicalizeText(p.descricao_parcela || 'Parcela');
+    const cartao = canonicalizeAccount(p.cartao_id || 'Cartão');
     if (comp) {
       faturasPorMes[comp] = (faturasPorMes[comp] || 0) + val;
       pushMesItem(
         comp,
-        `Fatura ${p.cartao_id || 'Cartão'} • ${descParcela}`,
+        `Fatura ${cartao} • ${descParcela}`,
         `- ${formatBRL(val)}`,
         false
       );
@@ -1273,7 +1532,7 @@ function renderAll() {
   renderThirdPartiesSection(terceiros, currentMonthYm);
   renderInvestmentsSection(investimentos, cotacoesCache);
 
-  // Cronograma mensal até 12/2027 (blocos colapsáveis)
+  // Cronograma mensal até 12/2027 (concentrado na aba Fluxo 2027)
   let saldoAcumulado = caixaHoje;
   const scheduleRows = proj.map((p) => {
     const mes = String(p.competencia || '').slice(0, 7);
@@ -1298,48 +1557,57 @@ function renderAll() {
     };
   });
 
-  const projPreviewEl = document.getElementById('homeProjectionPreview');
+  const currentRow = scheduleRows.find((r) => r.mes === currentMonthYm) || scheduleRows[0] || null;
+  renderExecutiveHome(currentRow, faturasAbertas, terceiros, currentMonthYm);
+
   const projFullEl = document.getElementById('projecaoFullList');
-  if (scheduleRows.length) {
-    const mapCollapsibleBlock = (item, openByDefault) => {
-      const balClass = item.saldoFinal >= 0 ? 'month-balance-ok' : 'month-balance-neg';
-      const detailsHtml = item.detalhes.length
-        ? `<div class="month-details">${item.detalhes.map((d) => {
-            const amtCls = d.isPositive ? 'amt-pos' : 'amt-neg';
-            return `<div class="month-detail-row"><span>${d.label}</span><strong class="${amtCls}">${d.valorStr}</strong></div>`;
-          }).join('')}</div>`
-        : '<div class="month-details"><span class="muted">Sem lançamentos programados neste mês.</span></div>';
-
-      return `
-        <details class="month-block" ${openByDefault ? 'open' : ''}>
-          <summary class="month-header">
-            <span class="month-header-left">
-              <span class="month-chevron">▶</span>
-              <span class="month-title">${item.tituloMes}</span>
-            </span>
-            <span class="${balClass}">Saldo: ${formatBRL(item.saldoFinal)}</span>
-          </summary>
-          <div class="month-metrics">
-            <div class="month-metric"><span>Entradas</span><strong class="amt-pos">${formatBRL(item.entradas)}</strong></div>
-            <div class="month-metric"><span>A pagar (desp./faturas)</span><strong class="amt-neg">${formatBRL(item.aPagar)}</strong></div>
-            <div class="month-metric"><span>Faturas cartão</span><strong>${formatBRL(item.faturasMes)}</strong></div>
-          </div>
-          ${detailsHtml}
-        </details>
-      `;
-    };
-
-    const visibleHomeRows = state.homeScheduleExpanded ? scheduleRows : scheduleRows.slice(0, 3);
-    projPreviewEl.innerHTML = visibleHomeRows
-      .map((it) => mapCollapsibleBlock(it, it.mes === currentMonthYm))
-      .join('');
-
+  if (projFullEl && scheduleRows.length) {
     projFullEl.innerHTML = scheduleRows
-      .map((it) => mapCollapsibleBlock(it, it.mes === currentMonthYm))
+      .map((item) => {
+        const balClass = item.saldoFinal >= 0 ? 'month-balance-ok' : 'month-balance-neg';
+        const reconBtn = renderReconcileButton(item.mes);
+        const isOpen = item.mes === currentMonthYm;
+        const detailsHtml = item.detalhes.length
+          ? `<div class="month-details">${item.detalhes.map((d) => {
+              const amtCls = d.isPositive ? 'amt-pos' : 'amt-neg';
+              return `<div class="month-detail-row"><span>${d.label}</span><strong class="${amtCls}">${d.valorStr}</strong></div>`;
+            }).join('')}</div>`
+          : '<div class="month-details"><span class="muted">Sem lançamentos programados neste mês.</span></div>';
+
+        return `
+          <details class="month-block" ${isOpen ? 'open' : ''}>
+            <summary class="month-header">
+              <span class="month-header-left">
+                <span class="month-chevron">▶</span>
+                <span class="month-title">${item.tituloMes}</span>
+              </span>
+              <span class="month-header-right">
+                ${reconBtn}
+                <span class="${balClass}">Saldo: ${formatBRL(item.saldoFinal)}</span>
+              </span>
+            </summary>
+            <div class="month-metrics">
+              <div class="month-metric"><span>Entradas</span><strong class="amt-pos">${formatBRL(item.entradas)}</strong></div>
+              <div class="month-metric"><span>A pagar (desp./faturas)</span><strong class="amt-neg">${formatBRL(item.aPagar)}</strong></div>
+              <div class="month-metric"><span>Faturas cartão</span><strong>${formatBRL(item.faturasMes)}</strong></div>
+            </div>
+            ${detailsHtml}
+          </details>
+        `;
+      })
       .join('');
   }
 
   renderMonthlyChart(scheduleRows);
+
+  // Delega cliques nos botões de conferência mensal (Em aberto / Conferido)
+  document.querySelectorAll('[data-recon-ym]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMonthReconciled(btn.dataset.reconYm);
+    });
+  });
 }
 
 /* ==========================================================================
@@ -1371,22 +1639,16 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
+  const btnGoToFluxo = document.getElementById('btnGoToFluxo');
+  if (btnGoToFluxo) {
+    btnGoToFluxo.addEventListener('click', () => switchTab('projecao'));
+  }
+
   document.getElementById('btnOpenQuickAdd').addEventListener('click', openModal);
   document.getElementById('btnCloseModal').addEventListener('click', closeModal);
   document.getElementById('btnSync').addEventListener('click', syncFromBackend);
   document.getElementById('configForm').addEventListener('submit', saveConfig);
   document.getElementById('quickAddForm').addEventListener('submit', handleQuickAddSubmit);
-
-  const toggleHomeBtn = document.getElementById('btnToggleHomeSchedule');
-  if (toggleHomeBtn) {
-    toggleHomeBtn.addEventListener('click', () => {
-      state.homeScheduleExpanded = !state.homeScheduleExpanded;
-      toggleHomeBtn.textContent = state.homeScheduleExpanded
-        ? 'Recolher meses futuros'
-        : 'Ver todos os meses';
-      renderAll();
-    });
-  }
 
   // Filtros de Movimentações
   const filterMonth = document.getElementById('filterMovMonth');
@@ -1439,7 +1701,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnQuotes = document.getElementById('btnUpdateQuotes');
   if (btnQuotes) btnQuotes.addEventListener('click', handleUpdateQuotes);
 
-  ['txTipo', 'txResponsavel', 'txConta', 'txValor', 'txMinhaParte', 'txDesconto'].forEach((id) => {
+  ['txTipo', 'txResponsavel', 'txConta', 'txValor', 'txMinhaParte', 'txDesconto', 'txIsRecorrente'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener('input', updateQuickFormVisibility);

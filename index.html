@@ -33,7 +33,7 @@
     </nav>
 
     <main id="viewContainer" class="view-container">
-      <!-- Seção Início / Dashboard -->
+      <!-- Seção Início / Visão Executiva -->
       <section id="tab-inicio" class="tab-panel active">
         <div class="kpi-grid">
           <article class="kpi-card">
@@ -56,11 +56,21 @@
 
         <div class="card">
           <div class="card-header-inline">
-            <h2>Cronograma Próximo (até 12/2027)</h2>
-            <button id="btnToggleHomeSchedule" class="btn btn-ghost btn-sm" type="button">Ver todos os meses</button>
+            <h2>Mês Atual — Visão Executiva</h2>
+            <div id="homeCurrentMonthActions"></div>
           </div>
-          <div id="homeProjectionPreview" class="list-stack">
-            <p class="muted">Sincronize com o backend para carregar os dados consolidados.</p>
+          <div id="homeCurrentMonthSummary" class="list-stack">
+            <p class="muted">Sincronize com o backend para carregar o resumo do mês.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header-inline">
+            <h2>Alertas e Vencimentos Próximos</h2>
+            <button id="btnGoToFluxo" class="btn btn-ghost btn-sm" type="button">Abrir Fluxo 2027 →</button>
+          </div>
+          <div id="homeUpcomingAlerts" class="list-stack">
+            <p class="muted">Nenhum vencimento pendente identificado.</p>
           </div>
         </div>
       </section>
@@ -113,7 +123,7 @@
       <section id="tab-cartoes" class="tab-panel">
         <div class="card">
           <h2>1. Faturas Detalhadas por Mês e por Cartão</h2>
-          <p class="muted" style="margin-bottom: 12px;">Cada cartão é exibido separadamente dentro do mês da fatura, diferenciando Minha Parte e Parte de Terceiros.</p>
+          <p class="muted" style="margin-bottom: 12px;">Cada cartão é exibido separadamente dentro do mês da fatura, mostrando Minha Parte, Rateio e Saldo Restante de parcelamentos.</p>
           <div id="cartoesByMonthAndCardList" class="list-stack"></div>
         </div>
 
@@ -136,9 +146,9 @@
         </div>
 
         <div class="card">
-          <h2>Saldo Pendente por Pessoa</h2>
+          <h2>Situação por Pessoa (Pendente vs. Quitado)</h2>
           <div id="terceirosSummaryGrid" class="bank-grid">
-            <p class="muted">Nenhum saldo pendente de terceiros.</p>
+            <p class="muted">Nenhum registro de terceiros encontrado.</p>
           </div>
         </div>
 
@@ -225,8 +235,8 @@
         </div>
 
         <div class="card">
-          <h2>Cronograma de Pagamentos e Saldo na Conta (até 12/2027)</h2>
-          <p class="muted" style="margin-bottom: 12px;">Clique em qualquer mês para expandir ou recolher os lançamentos detalhados.</p>
+          <h2>Cronograma Completo e Conferência Mensal (até 12/2027)</h2>
+          <p class="muted" style="margin-bottom: 12px;">Clique em qualquer mês para expandir lançamentos e marcar a conciliação como Conferido.</p>
           <div id="projecaoFullList" class="list-stack"></div>
         </div>
       </section>
@@ -272,7 +282,18 @@
 
         <label>
           Descrição
-          <input type="text" id="txDescricao" placeholder="Ex.: Salário, Supermercado, Ifood..." required />
+          <input type="text" id="txDescricao" list="suggestedDescriptions" placeholder="Ex.: Salário, Supermercado, Ifood..." required />
+          <datalist id="suggestedDescriptions">
+            <option value="Salário"></option>
+            <option value="13º Salário"></option>
+            <option value="Freelancer"></option>
+            <option value="Supermercado"></option>
+            <option value="Ifood"></option>
+            <option value="Placa Solar"></option>
+            <option value="Moto"></option>
+            <option value="Seguro"></option>
+            <option value="Internet / Luz / Água"></option>
+          </datalist>
         </label>
 
         <div class="form-row">
@@ -313,7 +334,7 @@
               <option value="Mercado Pago">Mercado Pago</option>
               <option value="BTG">BTG</option>
               <option value="Banco do Brasil">Banco do Brasil</option>
-              <option value="Caixa">Caixa Econômica</option>
+              <option value="Caixa">Caixa</option>
               <option value="Itaú">Itaú</option>
               <option value="Bradesco">Bradesco</option>
               <option value="Santander">Santander</option>
@@ -322,18 +343,36 @@
               <option value="Banrisul">Banrisul</option>
               <option value="PicPay">PicPay</option>
               <option value="XP">XP</option>
-              <option value="Dinheiro">Dinheiro / Carteira</option>
+              <option value="Dinheiro">Dinheiro</option>
               <option value="__OUTRO_BANCO__">+ Outro banco / conta...</option>
             </select>
             <input type="text" id="txOutroBanco" class="hidden" placeholder="Digite o nome do banco" />
           </label>
         </div>
 
+        <!-- Recorrência para Receitas/Despesas em Conta -->
+        <div id="recurrenceBox" class="extra-box">
+          <label class="checkbox-inline">
+            <input type="checkbox" id="txIsRecorrente" />
+            <span>Repetir mensalmente (Recorrência fixa / previsão)</span>
+          </label>
+          <div id="recurrenceFields" class="form-row hidden">
+            <label>
+              Quantidade de Meses
+              <input type="number" id="txRecorrenciaMeses" min="2" max="24" value="12" />
+            </label>
+            <label>
+              Observação
+              <input type="text" value="Gera 1 lançamento por mês" disabled />
+            </label>
+          </div>
+        </div>
+
         <!-- Campos extras exibidos apenas quando Compra no Cartão ou Reembolso -->
         <div id="cardExtraFields" class="extra-box hidden">
           <div class="form-row">
             <label>
-              Parcelas
+              Parcelas (1 a 72x)
               <input type="number" id="txParcelas" min="1" max="72" value="1" />
             </label>
             <label>
